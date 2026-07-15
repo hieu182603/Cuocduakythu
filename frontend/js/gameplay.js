@@ -410,26 +410,21 @@ function placeToken(p, tokenEl, racersList) {
     const occupants = racersList.filter(other => other.tileIndex === p.tileIndex);
     const slot = occupants.indexOf(p);
 
-    if (p.tileIndex === 0) {
-        const size = tileRect.width * 0.35; // Larger size on START
-        tokenEl.style.setProperty('--token-size', size + 'px');
-        tokenEl.style.setProperty('--badge-size', Math.max(12, size * 0.42) + 'px');
-        tokenEl.style.setProperty('--badge-font', Math.max(8, size * 0.24) + 'px');
-        tokenEl.style.setProperty('--badge-border', Math.max(1.5, size * 0.04) + 'px');
-        
-        const offset = OFFS[slot % OFFS.length];
-        const spread = size * 0.4;
-        
-        tokenEl.style.left = (tileRect.left - boardRect.left + tileRect.width / 2 + offset[0] * spread - size / 2) + 'px';
-        tokenEl.style.top = (tileRect.top - boardRect.top + tileRect.height / 2 + offset[1] * spread - size / 2) + 'px';
-        tokenEl.style.zIndex = String(32 + slot);
-        return;
-    }
-
+    // Make sure all tokens use uniform CSS default size
     tokenEl.style.removeProperty('--token-size');
     tokenEl.style.removeProperty('--badge-size');
     tokenEl.style.removeProperty('--badge-font');
     tokenEl.style.removeProperty('--badge-border');
+
+    if (p.tileIndex === 0) {
+        const offset = OFFS[slot % OFFS.length];
+        const spread = tokenEl.offsetWidth * 0.4;
+        
+        tokenEl.style.left = (tileRect.left - boardRect.left + tileRect.width / 2 + offset[0] * spread - tokenEl.offsetWidth / 2) + 'px';
+        tokenEl.style.top = (tileRect.top - boardRect.top + tileRect.height / 2 + offset[1] * spread - tokenEl.offsetHeight / 2) + 'px';
+        tokenEl.style.zIndex = String(32 + slot);
+        return;
+    }
     
     const offset = OFFS[slot % OFFS.length];
     const layer = Math.floor(slot / OFFS.length);
@@ -1520,7 +1515,7 @@ const WHEEL_SECTORS = [
     { label: "Lùi 3 ô", type: "trap", value: -3, desc: "Lùi ngay 3 ô trên bảng." },
     { label: "Tiến 3 ô", type: "reward", value: 3, desc: "Tiến lên 3 ô trên bảng." },
     { label: "Mất lượt", type: "trap", value: "skip", desc: "Mất lượt chơi tiếp theo." },
-    { label: "Thêm lượt", type: "reward", value: "extra", desc: "Được xoay xúc xắc thêm lượt nữa!" },
+    { label: "Tiến 4 ô", type: "reward", value: 4, desc: "May mắn! Tiến lên 4 ô." },
     { label: "Lùi 2 ô", type: "trap", value: -2, desc: "Lùi lại 2 ô." },
     { label: "Nhận Khiên", type: "reward", value: "shield", desc: "Nhận 1 lá chắn bảo hộ." },
     { label: "Xúc xắc x2", type: "reward", value: "double", desc: "Lượt tới khoảng cách xúc xắc nhân đôi." },
@@ -1805,61 +1800,87 @@ function triggerVictory(winner) {
         const winnerChar = winner.character || CHARACTER_DATABASE[0];
         logMessage(`🎉 KÌ TÍCH! Tay đua [${winner.name}] chơi nhân vật [${winnerChar.name}] đã chính thức vô địch!`, "log-win");
         
-        // Populate winner card
-        const winnerAvatar = document.getElementById("winner-avatar");
-        if (winnerAvatar) {
-            winnerAvatar.style.backgroundColor = winnerChar.color;
-            winnerAvatar.innerHTML = winnerChar.icon;
+        // Disable dice
+        const diceBtn = document.getElementById("btn-roll-dice");
+        if (diceBtn) {
+            diceBtn.disabled = true;
+            diceBtn.innerText = "KẾT THÚC";
         }
-        
-        const winnerName = document.getElementById("winner-name");
-        if (winnerName) winnerName.innerText = winner.name;
-        
-        const winnerCharEl = document.getElementById("winner-char");
-        if (winnerCharEl) winnerCharEl.innerText = `${winnerChar.name} (${winnerChar.badge})`;
 
-        // Populate leaderboard table
-        const table = document.getElementById("victory-leaderboard-list");
-        if (table) {
-            table.innerHTML = "";
-
-            // Sort by position (lapCount descending, then tileIndex descending, filter out spectators)
-            const sorted = [...players]
-                .filter(p => !p.isSpectator)
-                .sort((a, b) => {
-                    const lapA = a.lapCount || 0;
-                    const lapB = b.lapCount || 0;
-                    if (lapB !== lapA) {
-                        return lapB - lapA;
-                    }
-                    const tileA = a.tileIndex || 0;
-                    const tileB = b.tileIndex || 0;
-                    return tileB - tileA;
-                })
-                .slice(0, 10);
-            
-            sorted.forEach((p, idx) => {
-                const char = p.character || CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0];
-                const row = document.createElement("div");
-                row.className = "lb-row";
-                
-                row.innerHTML = `
-                    <div class="lb-player">
-                        <span class="lb-rank lb-rank-${idx + 1}">${idx + 1}</span>
-                        <span class="lb-avatar" style="background-color: ${char.color}">${char.icon}</span>
-                        <span class="lb-name">${p.name}</span>
-                    </div>
-                    <div class="lb-score">Vòng ${p.lapCount || 0} - Ô ${(p.tileIndex || 0) + 1} / ${char.name}</div>
-                `;
-                table.appendChild(row);
+        // Sort all players for final ranking
+        const finalRanking = [...players]
+            .filter(p => !p.isSpectator)
+            .sort((a, b) => {
+                if (b.lapCount !== a.lapCount) {
+                    return b.lapCount - a.lapCount;
+                }
+                return b.tileIndex - a.tileIndex;
             });
+
+        let rankingHTML = '<div style="text-align: left; margin: 25px 0; background: rgba(255,255,255,0.4); border-radius: 16px; padding: 12px; max-height: 280px; overflow-y: auto; box-shadow: inset 0 2px 10px rgba(0,0,0,0.05); border: 1px solid rgba(255,255,255,0.6);">';
+        finalRanking.forEach((p, index) => {
+            let medal = index === 0 ? "🥇" : (index === 1 ? "🥈" : (index === 2 ? "🥉" : `<span style="color:#888;font-size:16px;font-weight:bold;">#${index+1}</span>`));
+            let bgColor = index === 0 ? "linear-gradient(90deg, rgba(255,215,0,0.2) 0%, rgba(255,215,0,0.05) 100%)" : "transparent";
+            let borderColor = index === 0 ? "rgba(255,215,0,0.4)" : "rgba(0,0,0,0.06)";
+            let textColor = index === 0 ? "#d32f2f" : "#444";
+            
+            rankingHTML += `
+                <div style="display: flex; align-items: center; padding: 14px 18px; margin-bottom: 8px; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 12px; transition: all 0.2s;">
+                    <div style="width: 40px; font-size: 26px; text-align: center; margin-right: 15px;">${medal}</div>
+                    <div style="flex: 1; font-size: 20px; font-weight: 800; color: ${textColor}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; letter-spacing: 0.5px;">
+                        ${p.name}
+                    </div>
+                </div>
+            `;
+        });
+        rankingHTML += '</div>';
+
+        // Show Game Over Banner inside the board
+        const board = document.getElementById("board");
+        let modal = document.getElementById("game-over-banner");
+        if (!modal && board) {
+            modal = document.createElement("div");
+            modal.id = "game-over-banner";
+            modal.className = "game-modal-card";
+            modal.style.position = "absolute";
+            modal.style.top = "50%";
+            modal.style.left = "50%";
+            modal.style.transform = "translate(-50%, -50%)";
+            modal.style.zIndex = "400";
+            modal.style.width = "90%";
+            modal.style.maxWidth = "480px";
+            modal.style.textAlign = "center";
+            modal.style.background = "rgba(255, 255, 255, 0.95)";
+            modal.style.backdropFilter = "blur(12px)";
+            modal.style.border = "4px solid #ffd700";
+            modal.style.borderRadius = "20px";
+            modal.style.padding = "30px 25px";
+            modal.style.boxShadow = "0 15px 40px rgba(0,0,0,0.5), inset 0 0 0 3px rgba(255,255,255,0.8)";
+            
+            modal.innerHTML = `
+                <h2 style="color: #d32f2f; font-size: 32px; font-weight: 900; margin-bottom: 10px; text-transform: uppercase;">
+                    TRÒ CHƠI KẾT THÚC
+                </h2>
+                ${rankingHTML}
+                <button id="btn-game-over-home" class="event-button" style="width: 100%; font-size: 20px; padding: 14px; border-radius: 12px; box-shadow: 0 6px 15px rgba(30,136,229,0.3);">
+                    Thoát về Menu
+                </button>
+            `;
+            board.appendChild(modal);
+            
+            document.getElementById("btn-game-over-home").onclick = () => {
+                modal.remove();
+                if (typeof connection !== 'undefined' && connection && typeof isOnlineMode !== 'undefined' && isOnlineMode) {
+                    connection.stop();
+                }
+                if (typeof showScreen === "function") showScreen("menu");
+            };
+        } else if (modal) {
+            modal.querySelector(".winner-name-span").innerText = winner.name;
         }
+
     } catch (error) {
-        console.error("Lỗi khi render bảng xếp hạng victory:", error);
-    } finally {
-        setTimeout(() => {
-            showScreen("victory");
-        }, 1500);
+        console.error("Lỗi khi kết thúc game:", error);
     }
 }
 
