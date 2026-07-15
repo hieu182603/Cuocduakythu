@@ -6,16 +6,53 @@ namespace Backend.Services
     {
         private readonly Random _random = new();
 
-        // ── Board Layout (32 tiles) ──
+        // ── Board Layout (41 tiles) ──
         private static readonly string[] TileTypes =
         {
-            "start", "question", "trap", "question", "reward", "question", "wheel", "question", "trap", "question",
-            "question", "question", "question", "trap", "question", "reward", "question", "trap", "reward", "question",
-            "wheel", "question", "trap", "question", "reward", "question", "question", "question", "wheel", "question",
-            "trap", "reward"
+            "start",      // 0
+            "trap",       // 1
+            "question",   // 2
+            "trap",       // 3
+            "question",   // 4
+            "trap",       // 5 (bomb)
+            "question",   // 6
+            "question",   // 7
+            "reward",     // 8
+            "question",   // 9
+            "trap",       // 10
+            "question",   // 11
+            "question",   // 12
+            "question",   // 13
+            "wheel",      // 14
+            "question",   // 15
+            "trap",       // 16 (bomb)
+            "question",   // 17
+            "trap",       // 18
+            "question",   // 19
+            "question",   // 20
+            "question",   // 21
+            "reward",     // 22
+            "question",   // 23
+            "question",   // 24
+            "trap",       // 25
+            "question",   // 26
+            "trap",       // 27
+            "question",   // 28
+            "trap",       // 29 (bomb)
+            "wheel",      // 30
+            "question",   // 31
+            "question",   // 32
+            "question",   // 33
+            "trap",       // 34
+            "question",   // 35
+            "reward",     // 36
+            "trap",       // 37 (bomb)
+            "question",   // 38
+            "trap",       // 39
+            "question"    // 40
         };
 
-        private const int TotalTiles = 32;
+        private const int TotalTiles = 41;
 
         // ── Trap Definitions ──
         private static readonly (string Name, string Detail)[] Traps =

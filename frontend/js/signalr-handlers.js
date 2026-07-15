@@ -7,6 +7,12 @@ function initSignalR() {
         console.warn("SignalR CDN is not loaded yet.");
         return;
     }
+    if (connection) {
+        if (connection.state === "Disconnected") {
+            connection.start().catch(err => console.error("SignalR Reconnect failed: ", err));
+        }
+        return;
+    }
 
     connection = new signalR.HubConnectionBuilder()
         .withUrl("http://localhost:5089/gameHub")
