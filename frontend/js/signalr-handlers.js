@@ -15,7 +15,7 @@ function initSignalR() {
     }
 
     connection = new signalR.HubConnectionBuilder()
-        .withUrl("http://localhost:5089/gameHub")
+        .withUrl(`http://${window.location.hostname}:5089/gameHub`)
         .withAutomaticReconnect()
         .build();
 
