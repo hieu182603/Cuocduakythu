@@ -76,8 +76,9 @@ function initSignalR() {
                 tileIndex: p.tileIndex,
                 wrongStreak: p.wrongStreak,
                 shield: p.shield,
-                skipTurn: p.skipTurn,
+                freezeTimeMs: p.freezeTimeMs,
                 doubleDice: p.doubleDice,
+                isAutoRoll: p.isAutoRoll,
                 diceModifier: p.diceModifier,
                 lapCount: p.lapCount,
                 isSpectator: p.isSpectator
@@ -148,14 +149,35 @@ function initSignalR() {
         }, 1500);
     });
 
-    connection.on("PlayerMoved", (playerId, targetTileIndex, lapCompleted) => {
-        setTimeout(() => {
-            movePlayerSequentiallyOnline(playerId, targetTileIndex, lapCompleted);
-        }, 1500); // 1.5s delay to sync with 3D dice roll animation
+    connection.on("PlayerMoved", (playerId, targetTileIndex, lapCompleted, direction, steps) => {
+        queueOnlineMovement({ playerId, targetTileIndex, lapCompleted, direction, steps });
+    });
+
+    connection.on("EnableRollDice", () => {
+        queueOnlineCallback(() => {
+            if (typeof window.checkPostPopupState === "function") {
+                window.checkPostPopupState();
+            } else {
+                document.getElementById("btn-roll-dice").disabled = false;
+            }
+        });
+    });
+
+    connection.on("TriggerTrap", (playerName) => {
+        if (myPlayerId !== -1 && players.find(p => p.id === myPlayerId)?.name === playerName) {
+            connection.invoke("ResolveTrap", roomCode);
+        }
+    });
+
+    connection.on("TriggerReward", (playerName) => {
+        if (myPlayerId !== -1 && players.find(p => p.id === myPlayerId)?.name === playerName) {
+            connection.invoke("ResolveReward", roomCode);
+        }
     });
 
     connection.on("TriggerQuestion", (playerName, questionText, answersList, wrongStreak) => {
-        const triggerFn = () => {
+        queueOnlineCallback(() => new Promise(resolvePopup => {
+            const player = players.find(p => p.name === playerName);
             currentQuestion = { question: questionText, answers: answersList, correct: -1 };
             
             const modal = document.getElementById("question-modal");
@@ -198,13 +220,9 @@ function initSignalR() {
                     connection.invoke("SubmitAnswer", roomCode, -1);
                 }
             });
-        };
 
-        if (isMovementAnimating) {
-            pendingEvent = triggerFn;
-        } else {
-            triggerFn();
-        }
+            window.resolveQuestionPopup = resolvePopup;
+        }));
     });
 
     connection.on("AnswerOutcome", (playerName, isCorrect, correctIndex, wrongStreak, penaltyText) => {
@@ -234,20 +252,29 @@ function initSignalR() {
         setTimeout(() => {
             document.getElementById("question-modal").classList.remove("active");
             if (myPlayerId !== -1) {
-                document.getElementById("btn-roll-dice").disabled = false;
+                if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                 document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
+            }
+            // Resume the queue if the QuestionTriggered callback is waiting
+            if (typeof window.resolveQuestionPopup === "function") {
+                window.resolveQuestionPopup();
+                window.resolveQuestionPopup = null;
             }
         }, 2000);
     });
 
-    connection.on("TriggerTrap", (playerName, trapName, trapDetail, newTileIndex, skipTurn) => {
-        const triggerFn = () => {
+    connection.on("TrapResolved", (playerName, trapName, trapDetail, newTileIndex, freezeTimeMs, landingTileIndex) => {
+        queueOnlineCallback(() => new Promise(resolvePopup => {
             const player = players.find(p => p.name === playerName);
             const modal = document.getElementById("trap-modal");
             const cardsContainer = document.getElementById("trap-cards-container");
             const closeBtn = document.getElementById("btn-close-trap-modal");
             const isActive = myPlayerId !== -1;
-            const eventTileIndex = player ? player.tileIndex : -1;
+            const eventTileIndex = Number.isInteger(landingTileIndex)
+                ? landingTileIndex
+                : (player ? player.tileIndex : -1);
+
+
 
             // Reset elements
             document.getElementById("trap-result-box").style.display = "none";
@@ -311,10 +338,8 @@ function initSignalR() {
 
                         // Apply and log
                         if (player) {
-                            player.tileIndex = newTileIndex;
-                            player.skipTurn = skipTurn;
+                            player.freezeTimeMs = freezeTimeMs;
                         }
-                        updatePlayerPositionsOnBoard();
                         renderScoreboard();
                         logMessage(`[${playerName}] kích hoạt bẫy: ${trapName} - ${trapDetail}`, "log-trap");
 
@@ -328,13 +353,14 @@ function initSignalR() {
                             closeBtn.style.display = "inline-flex";
                             closeBtn.onclick = () => {
                                 modal.classList.remove("active");
+                                resolvePopup();
                                 if (myPlayerId !== -1) {
-                                    const tile = TILE_COORDS[player.tileIndex];
+                                    const tile = TILE_COORDS[newTileIndex];
                                     // Only process new tile landing if they actually moved to a different non-start tile
-                                    if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
+                                    if (newTileIndex !== eventTileIndex && tile.type !== "start") {
                                         connection.invoke("ProcessNewTileLanding", roomCode);
                                     } else {
-                                        document.getElementById("btn-roll-dice").disabled = false;
+                                        if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                                         document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
                                     }
                                 }
@@ -347,17 +373,11 @@ function initSignalR() {
             });
 
             modal.classList.add("active");
-        };
-
-        if (isMovementAnimating) {
-            pendingEvent = triggerFn;
-        } else {
-            triggerFn();
-        }
+        }));
     });
 
-    connection.on("TriggerReward", (playerName, rewardName, rewardDetail, newTileIndex, shield, doubleDice, isExtraTurn) => {
-        const triggerFn = () => {
+    connection.on("RewardResolved", (playerName, rewardName, rewardDetail, newTileIndex, shield, doubleDice, isExtraTurn) => {
+        queueOnlineCallback(() => new Promise(resolvePopup => {
             const player = players.find(p => p.name === playerName);
             const modal = document.getElementById("reward-modal");
             const cardsContainer = document.getElementById("reward-cards-container");
@@ -427,12 +447,10 @@ function initSignalR() {
 
                         // Apply and log
                         if (player) {
-                            player.tileIndex = newTileIndex;
                             player.shield = shield;
                             player.doubleDice = doubleDice;
-                            player.isExtraTurn = isExtraTurn;
+                            player.isAutoRoll = isExtraTurn;
                         }
-                        updatePlayerPositionsOnBoard();
                         renderScoreboard();
                         logMessage(`[${playerName}] kích hoạt thưởng: ${rewardName} - ${rewardDetail}`, "log-reward");
 
@@ -446,13 +464,14 @@ function initSignalR() {
                             closeBtn.style.display = "inline-flex";
                             closeBtn.onclick = () => {
                                 modal.classList.remove("active");
+                                resolvePopup();
                                 if (myPlayerId !== -1) {
-                                    const tile = TILE_COORDS[player.tileIndex];
+                                    const tile = TILE_COORDS[newTileIndex];
                                     // Only process new tile landing if they actually moved to a different non-start tile
-                                    if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
+                                    if (newTileIndex !== eventTileIndex && tile.type !== "start") {
                                         connection.invoke("ProcessNewTileLanding", roomCode);
                                     } else {
-                                        document.getElementById("btn-roll-dice").disabled = false;
+                                        if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                                         document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
                                     }
                                 }
@@ -465,13 +484,7 @@ function initSignalR() {
             });
 
             modal.classList.add("active");
-        };
-
-        if (isMovementAnimating) {
-            pendingEvent = triggerFn;
-        } else {
-            triggerFn();
-        }
+        }));
     });
 
     connection.on("TriggerShieldBlock", (playerName) => {
@@ -495,7 +508,7 @@ function initSignalR() {
             closeBtn.onclick = () => {
                 modal.classList.remove("active");
                 if (myPlayerId !== -1) {
-                    document.getElementById("btn-roll-dice").disabled = false;
+                    if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                     document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
                 }
             };
@@ -505,7 +518,7 @@ function initSignalR() {
     });
 
     connection.on("TriggerWheel", (playerName) => {
-        const triggerFn = () => {
+        queueOnlineCallback(() => new Promise(resolvePopup => {
             const modal = document.getElementById("wheel-modal");
             document.getElementById("wheel-result-text").style.display = "none";
             document.getElementById("btn-spin-wheel").style.display = "none";
@@ -522,22 +535,20 @@ function initSignalR() {
                     connection.invoke("SpinWheel", roomCode);
                 };
             }
-        };
-
-        if (isMovementAnimating) {
-            pendingEvent = triggerFn;
-        } else {
-            triggerFn();
-        }
+            
+            // To resolve the popup, store it so WheelSpun can resume the queue
+            window.resolveWheelPopup = resolvePopup;
+        }));
     });
 
-    connection.on("WheelSpun", (playerName, sectorIndex, label, desc, isReward, newTileIndex, skipTurn, shield, isExtraTurn) => {
+    connection.on("WheelSpun", (playerName, sectorIndex, label, desc, isReward, newTileIndex, freezeTimeMs, shield, isAutoRoll) => {
         const player = players.find(p => p.name === playerName);
+        let eventTileIndex = -1;
         if (player) {
-            player.tileIndex = newTileIndex;
-            player.skipTurn = skipTurn;
+            eventTileIndex = player.tileIndex;
+            player.freezeTimeMs = freezeTimeMs;
             player.shield = shield;
-            player.isExtraTurn = isExtraTurn;
+            player.isAutoRoll = isAutoRoll;
             if (sectorIndex === 6) {
                 player.doubleDice = true;
             }
@@ -582,9 +593,18 @@ function initSignalR() {
 
                 setTimeout(() => {
                     document.getElementById("wheel-modal").classList.remove("active");
+                    if (typeof window.resolveWheelPopup === "function") {
+                        window.resolveWheelPopup();
+                        window.resolveWheelPopup = null;
+                    }
                     if (myPlayerId !== -1) {
-                        document.getElementById("btn-roll-dice").disabled = false;
-                        document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
+                        const tile = TILE_COORDS[newTileIndex];
+                        if (newTileIndex !== eventTileIndex && tile.type !== "start") {
+                            connection.invoke("ProcessNewTileLanding", roomCode);
+                        } else {
+                            if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
+                            document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
+                        }
                     }
                 }, 2000);
             }
@@ -602,7 +622,11 @@ function initSignalR() {
     });
 
     connection.on("GameFinished", (winner) => {
-        triggerVictory(winner);
+        const localWinner = players.find(p => p.id === winner.id) || winner;
+        if (!localWinner.character) {
+            localWinner.character = CHARACTER_DATABASE.find(c => c.id === localWinner.horseId) || CHARACTER_DATABASE[0];
+        }
+        triggerVictory(localWinner);
     });
 
     connection.on("PlayerDisconnected", (playerName, playersList) => {

@@ -59,7 +59,7 @@ namespace Backend.Services
         {
             ("Hố Bùn Lầy",            "Nhựa bị trượt chân! Lùi ngay 2 ô."),
             ("Động Đất Trượt Dốc",     "Sự cố địa chấn hung bạo! Lùi ngay 5 ô."),
-            ("Đầm Lầy Choáng Váng",    "Nhân vật bị mắc kẹt bùn sâu, mất lượt ở vòng sau."),
+            ("Đầm Lầy Choáng Váng",    "Nhân vật bị mắc kẹt bùn sâu, bị đóng băng cấm tung xúc xắc trong 5 giây."),
             ("Bảo Táp Gió Ngược",      "Gió bão cản trở! Xúc xắc lăn tối đa chỉ được 3 trong 2 lượt tới."),
             ("Cổng Dịch Chuyển Lỗi",   "Cổng không gian bị lỗi! Bị tịch thu lá chắn đang có (nếu có) và lùi lại 3 ô."),
             ("Hố Đen Vũ Trụ (Hiếm)",   "Trôi dạt không gian! Bị hút trực tiếp quay về vạch Start.")
@@ -70,7 +70,7 @@ namespace Backend.Services
         {
             ("Cà Rốt Siêu Cấp",     "Tăng tốc lực! Tiến lên thêm 3 ô."),
             ("Khiên Thần Bảo Hộ",    "Nhận một lớp lá chắn miễn nhiễm hoàn toàn hình phạt từ Bẫy tiếp theo."),
-            ("Động Cơ Phản Lực",     "Quá phấn khích! Đi thêm một lượt xúc xắc ngay lập tức."),
+            ("Động Cơ Phản Lực",     "Quá phấn khích! Tự động tung thêm 1 lần xúc xắc nữa ngay lập tức."),
             ("Nhân Đôi Động Cơ",     "Double Dice! Lượt tiếp theo xúc xắc của bạn sẽ được nhân đôi khoảng cách."),
             ("Quà Troll Bí Mật",     "Mở quà... Ồ không! Bạn bị troll, lùi lại 2 ô."),
             ("Hộp Quà Trống",        "Mở hộp quà... Không có gì cả! Chúc bạn may mắn lần sau.")
@@ -81,8 +81,8 @@ namespace Backend.Services
         {
             ("Lùi 3 ô",       "Lùi ngay 3 ô trên bảng.",                          false),
             ("Tiến 3 ô",      "Tiến lên 3 ô trên bảng.",                           true),
-            ("Mất lượt",      "Mất lượt chơi tiếp theo.",                           false),
-            ("Thêm lượt",     "Được xoay xúc xắc thêm lượt nữa!",                 true),
+            ("Đóng Băng",     "Bị đóng băng không thể tung xúc xắc trong 5s.",     false),
+            ("Auto Roll",     "Tự động tung xúc xắc thêm lượt nữa!",              true),
             ("Lùi 2 ô",       "Lùi lại 2 ô.",                                      false),
             ("Nhận Khiên",    "Nhận 1 lá chắn bảo hộ.",                             true),
             ("Xúc xắc x2",   "Lượt tới khoảng cách xúc xắc nhân đôi.",            true),
@@ -177,24 +177,9 @@ namespace Backend.Services
             else
             {
                 player.WrongStreak++;
-                int rType = _random.Next(3);
-
-                if (rType == 0)
-                {
-                    int backSteps = _random.Next(1, 4); // 1–3
-                    player.TileIndex = Math.Max(0, player.TileIndex - backSteps);
-                    penaltyText = $"lùi lại {backSteps} ô";
-                }
-                else if (rType == 1)
-                {
-                    player.SkipTurn = true;
-                    penaltyText = "bị choáng mất lượt vòng kế";
-                }
-                else
-                {
-                    int seconds = 10 + (player.WrongStreak * 5);
-                    penaltyText = $"phạt thêm {seconds} giây chờ";
-                }
+                int backSteps = player.WrongStreak;
+                player.TileIndex = Math.Max(0, player.TileIndex - backSteps);
+                penaltyText = $"lùi lại {backSteps} ô";
             }
 
             return (isCorrect, penaltyText);
@@ -204,8 +189,9 @@ namespace Backend.Services
         // TRAPS
         // ════════════════════════════════════════
 
-        public (string name, string detail) ApplyTrap(Player player, List<Player> allPlayers)
+        public (string name, string detail, string movementDirection, int movementSteps) ApplyTrap(Player player)
         {
+            int previousTileIndex = player.TileIndex;
             int trapIdx = _random.Next(Traps.Length);
 
             // Reduce rare "quay-start" (index 5) chance to ~15%
@@ -224,8 +210,8 @@ namespace Backend.Services
                 case 1: // Lùi 5
                     player.TileIndex = Math.Max(0, player.TileIndex - 5);
                     break;
-                case 2: // Mất lượt
-                    player.SkipTurn = true;
+                case 2: // Mất lượt -> Freeze 5s
+                    player.FreezeTimeMs = 5000;
                     break;
                 case 3: // Dice max 3 for 2 turns
                     player.DiceModifier = 2;
@@ -239,30 +225,41 @@ namespace Backend.Services
                     break;
             }
 
-            return (name, detail);
+            string movementDirection = trapIdx == 5 && player.TileIndex != previousTileIndex
+                ? "teleport"
+                : player.TileIndex != previousTileIndex
+                    ? "backward"
+                    : "sync";
+            int movementSteps = movementDirection == "backward"
+                ? previousTileIndex - player.TileIndex
+                : 0;
+
+            return (name, detail, movementDirection, movementSteps);
         }
 
         // ════════════════════════════════════════
         // REWARDS
         // ════════════════════════════════════════
 
-        public (string name, string detail, bool isExtraTurn) ApplyReward(Player player)
+        public (string name, string detail, bool isAutoRoll, string movementDirection, int movementSteps) ApplyReward(Player player)
         {
+            int previousTileIndex = player.TileIndex;
             int rewardIdx = _random.Next(Rewards.Length);
             var (name, detail) = Rewards[rewardIdx];
-            bool isExtraTurn = false;
+            bool isAutoRoll = false;
 
             switch (rewardIdx)
             {
                 case 0: // Tiến 3
-                    MovePlayerForward(player, 3);
+                    player.TileIndex = (player.TileIndex + 3) % TotalTiles;
+                    if (player.TileIndex < previousTileIndex) player.LapCount++;
                     break;
-                case 1: // Shield
+                case 1: // Khiên
                     player.Shield = true;
                     break;
-                case 2: // Extra turn
-                    player.IsExtraTurn = true;
-                    isExtraTurn = true;
+                case 2: // Thêm lượt
+                    isAutoRoll = true;
+                    player.IsAutoRoll = true;
                     break;
                 case 3: // Double Dice
                     player.DoubleDice = true;
@@ -274,15 +271,27 @@ namespace Backend.Services
                     break;
             }
 
-            return (name, detail, isExtraTurn);
+            string movementDirection = rewardIdx == 0
+                ? "forward"
+                : rewardIdx == 4 && player.TileIndex != previousTileIndex
+                    ? "backward"
+                    : "sync";
+            int movementSteps = rewardIdx == 0
+                ? 3
+                : rewardIdx == 4
+                    ? previousTileIndex - player.TileIndex
+                    : 0;
+
+            return (name, detail, isAutoRoll, movementDirection, movementSteps);
         }
 
         // ════════════════════════════════════════
         // SPIN WHEEL
         // ════════════════════════════════════════
 
-        public (int sectorIndex, string label, string desc, bool isReward) SpinWheel(Player player)
+        public (int sectorIndex, string label, string desc, bool isReward, string movementDirection, int movementSteps) SpinWheel(Player player)
         {
+            int previousTileIndex = player.TileIndex;
             int idx = _random.Next(WheelSectors.Length);
             var (label, desc, isReward) = WheelSectors[idx];
 
@@ -290,8 +299,8 @@ namespace Backend.Services
             {
                 case 0:  player.TileIndex = Math.Max(0, player.TileIndex - 3); break;                  // Lùi 3
                 case 1:  MovePlayerForward(player, 3); break;                                           // Tiến 3
-                case 2:  player.SkipTurn = true; break;                                                 // Mất lượt
-                case 3:  player.IsExtraTurn = true; break;                                              // Thêm lượt
+                case 2:  player.FreezeTimeMs = 5000; break;                                             // Đóng băng
+                case 3:  player.IsAutoRoll = true; break;                                               // Auto Roll
                 case 4:  player.TileIndex = Math.Max(0, player.TileIndex - 2); break;                   // Lùi 2
                 case 5:  player.Shield = true; break;                                                   // Nhận Khiên
                 case 6:  player.DoubleDice = true; break;                                               // x2 xúc xắc
@@ -302,7 +311,21 @@ namespace Backend.Services
                 case 11: player.TileIndex = Math.Max(0, player.TileIndex - 5); break;                   // Lùi 5
             }
 
-            return (idx, label, desc, isReward);
+            string movementDirection = idx switch
+            {
+                1 or 8 or 10 => "forward",
+                0 or 4 or 11 => "backward",
+                7 when player.TileIndex != previousTileIndex => "teleport",
+                _ => "sync"
+            };
+            int movementSteps = movementDirection switch
+            {
+                "forward" => (player.TileIndex - previousTileIndex + TotalTiles) % TotalTiles,
+                "backward" => previousTileIndex - player.TileIndex,
+                _ => 0
+            };
+
+            return (idx, label, desc, isReward, movementDirection, movementSteps);
         }
 
         // ════════════════════════════════════════

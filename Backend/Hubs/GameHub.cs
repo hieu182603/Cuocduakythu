@@ -104,8 +104,9 @@ namespace Backend.Hubs
                             p.TileIndex,
                             p.WrongStreak,
                             p.Shield,
-                            p.SkipTurn,
+                            p.FreezeTimeMs,
                             p.DoubleDice,
+                            p.IsAutoRoll,
                             p.DiceModifier,
                             p.LapCount,
                             p.IsSpectator,
@@ -256,9 +257,9 @@ namespace Backend.Hubs
             if (room == null || !room.IsStarted) return;
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null || player.IsSpectator) return;
+            if (player == null || player.IsSpectator || player.CurrentQuestion != null || player.PendingTileEventType != null) return;
 
-            player.IsExtraTurn = false;
+            player.IsAutoRoll = false;
 
             // Calculate roll
             var (rollVal1, rollVal2, totalMove) = _gameService.CalculateDiceRoll(player);
@@ -266,7 +267,7 @@ namespace Backend.Hubs
 
             // Move player
             _gameService.MovePlayer(player, totalMove);
-            await Clients.Group(roomCode).SendAsync("PlayerMoved", player.Id, player.TileIndex, player.LapCount);
+            await BroadcastPlayerMovement(roomCode, player, "forward", totalMove, 1500);
             _logger.LogInformation("🎲 [RollDice] Room {RoomCode} | Player {PlayerName} rolled ({Val1}, {Val2}) -> Moved {Total} steps to Tile {Tile}", roomCode, player.Name, rollVal1, rollVal2, totalMove, player.TileIndex);
 
             // Process tile landing
@@ -284,6 +285,62 @@ namespace Backend.Hubs
             await ProcessTileLanding(roomCode, room, player);
         }
 
+        public async Task ResolveTrap(string roomCode)
+        {
+            var room = _roomRepo.GetRoom(roomCode);
+            if (room == null || !room.IsStarted) return;
+
+            var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+            if (player == null || player.PendingTileEventType != "trap") return;
+
+            int landingTileIndex = player.PendingTileIndex;
+            var (trapName, trapDetail, movementDirection, movementSteps) = _gameService.ApplyTrap(player);
+            player.PendingTileEventType = null;
+
+            await Clients.Caller.SendAsync(
+                "TrapResolved",
+                player.Name,
+                trapName,
+                trapDetail,
+                player.TileIndex,
+                player.FreezeTimeMs,
+                landingTileIndex);
+            await BroadcastPlayerMovement(roomCode, player, movementDirection, movementSteps);
+            await Clients.Group(roomCode).SendAsync(
+                "StatusUpdate",
+                $"[Bẫy] {player.Name} kích hoạt: {trapName} ({trapDetail})",
+                "log-trap");
+        }
+
+        public async Task ResolveReward(string roomCode)
+        {
+            var room = _roomRepo.GetRoom(roomCode);
+            if (room == null || !room.IsStarted) return;
+
+            var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+            if (player == null || player.PendingTileEventType != "reward") return;
+
+            int landingTileIndex = player.PendingTileIndex;
+            var (rewardName, rewardDetail, isAutoRoll, movementDirection, movementSteps) = _gameService.ApplyReward(player);
+            player.PendingTileEventType = null;
+
+            await Clients.Caller.SendAsync(
+                "RewardResolved",
+                player.Name,
+                rewardName,
+                rewardDetail,
+                player.TileIndex,
+                player.Shield,
+                player.DoubleDice,
+                isAutoRoll,
+                landingTileIndex);
+            await BroadcastPlayerMovement(roomCode, player, movementDirection, movementSteps);
+            await Clients.Group(roomCode).SendAsync(
+                "StatusUpdate",
+                $"[Thưởng] {player.Name} nhận được: {rewardName} ({rewardDetail})",
+                "log-reward");
+        }
+
         public async Task SubmitAnswer(string roomCode, int answerIndex)
         {
             var room = _roomRepo.GetRoom(roomCode);
@@ -292,10 +349,15 @@ namespace Backend.Hubs
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
             if (player == null || player.CurrentQuestion == null) return;
 
-            var (isCorrect, penaltyText) = _gameService.ProcessAnswer(player, player.CurrentQuestion, answerIndex);
+            // Save and clear current question to prevent overwriting if ProcessTileLanding sets a new one
+            var answeredQuestion = player.CurrentQuestion;
+            player.CurrentQuestion = null;
+
+            int previousTileIndex = player.TileIndex;
+            var (isCorrect, penaltyText) = _gameService.ProcessAnswer(player, answeredQuestion, answerIndex);
 
             // Find correct index for UI highlight
-            int correctIndex = player.CurrentQuestion.Options
+            int correctIndex = answeredQuestion.Options
                 .OrderBy(o => o.OptionLetter)
                 .ToList()
                 .FindIndex(o => o.IsCorrect);
@@ -303,15 +365,22 @@ namespace Backend.Hubs
             // Send outcome ONLY to caller
             await Clients.Caller.SendAsync("AnswerOutcome", player.Name, isCorrect, correctIndex, player.WrongStreak, penaltyText);
             
-            // Broadcast movement in case of penalty
-            await Clients.Group(roomCode).SendAsync("PlayerMoved", player.Id, player.TileIndex, player.LapCount);
+            // Only broadcast a movement when the answer penalty actually changed position.
+            if (player.TileIndex != previousTileIndex)
+            {
+                await BroadcastPlayerMovement(
+                    roomCode,
+                    player,
+                    "backward",
+                    previousTileIndex - player.TileIndex);
+                
+                await ProcessTileLanding(roomCode, room, player);
+            }
 
             // Log status update
             string logMsg = isCorrect ? $"[Hệ thống] {player.Name} trả lời ĐÚNG câu hỏi!" : $"[Hệ thống] {player.Name} trả lời SAI câu hỏi! {penaltyText}";
             await Clients.Group(roomCode).SendAsync("StatusUpdate", logMsg, isCorrect ? "log-question" : "log-trap");
             _logger.LogInformation("📝 [SubmitAnswer] Room {RoomCode} | Player {PlayerName} -> Option: {AnswerIndex} | IsCorrect: {IsCorrect} | Tile: {Tile}", roomCode, player.Name, answerIndex, isCorrect, player.TileIndex);
-
-            player.CurrentQuestion = null;
         }
 
         public async Task SpinWheel(string roomCode)
@@ -322,16 +391,16 @@ namespace Backend.Hubs
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
             if (player == null || player.IsSpectator) return;
 
-            var (sectorIdx, label, desc, isReward) = _gameService.SpinWheel(player);
+            var (sectorIdx, label, desc, isReward, movementDirection, movementSteps) = _gameService.SpinWheel(player);
 
             // Send WheelSpun ONLY to caller
             await Clients.Caller.SendAsync("WheelSpun",
                 player.Name, sectorIdx, label, desc, isReward,
-                player.TileIndex, player.SkipTurn, player.Shield,
-                player.IsExtraTurn);
+                player.TileIndex, player.FreezeTimeMs, player.Shield,
+                player.IsAutoRoll);
 
             // Broadcast movement and status log to group
-            await Clients.Group(roomCode).SendAsync("PlayerMoved", player.Id, player.TileIndex, player.LapCount);
+            await BroadcastPlayerMovement(roomCode, player, movementDirection, movementSteps, 3000);
             
             string logMsg = $"[Vòng Quay] {player.Name} quay trúng: {label} ({desc})";
             await Clients.Group(roomCode).SendAsync("StatusUpdate", logMsg, isReward ? "log-reward" : "log-trap");
@@ -347,6 +416,23 @@ namespace Backend.Hubs
         // INTERNAL: TILE PROCESSING
         // ════════════════════════════════════════
 
+        private Task BroadcastPlayerMovement(
+            string roomCode,
+            Player player,
+            string movementDirection,
+            int movementSteps,
+            int delayBeforeMs = 0)
+        {
+            return Clients.Group(roomCode).SendAsync(
+                "PlayerMoved",
+                player.Id,
+                player.TileIndex,
+                player.LapCount,
+                movementDirection,
+                movementSteps,
+                delayBeforeMs);
+        }
+
         private async Task ProcessTileLanding(string roomCode, GameRoom room, Player player)
         {
             await Task.Delay(1000); // Wait for hop animation on clients
@@ -356,7 +442,8 @@ namespace Backend.Hubs
             switch (tileType)
             {
                 case "start":
-                    await Clients.Group(roomCode).SendAsync("StatusUpdate", $"[Server] {player.Name} dừng tại ô Xuất Phát.", "log-win");
+                    await Clients.Group(roomCode).SendAsync("StatusUpdate", $"[Hệ thống] {player.Name} dừng tại ô Xuất Phát.", "log-win");
+                    await Clients.Client(player.ConnectionId).SendAsync("EnableRollDice");
                     break;
 
                 case "question":
@@ -369,21 +456,27 @@ namespace Backend.Hubs
                     break;
 
                 case "trap":
-                    if (player.Shield)
                     {
-                        player.Shield = false;
-                        await Clients.Client(player.ConnectionId).SendAsync("TriggerShieldBlock", player.Name);
-                    }
-                    else
-                    {
-                        var (trapName, trapDetail) = _gameService.ApplyTrap(player, room.Players);
-                        await Clients.Client(player.ConnectionId).SendAsync("TriggerTrap", player.Name, trapName, trapDetail, player.TileIndex, player.SkipTurn);
+                        if (player.Shield)
+                        {
+                            player.Shield = false;
+                            await Clients.Client(player.ConnectionId).SendAsync("TriggerShieldBlock", player.Name);
+                        }
+                        else
+                        {
+                            player.PendingTileEventType = "trap";
+                            player.PendingTileIndex = player.TileIndex;
+                            await Clients.Client(player.ConnectionId).SendAsync("TriggerTrap", player.Name);
+                        }
                     }
                     break;
 
                 case "reward":
-                    var (rewardName, rewardDetail, isExtraTurn) = _gameService.ApplyReward(player);
-                    await Clients.Client(player.ConnectionId).SendAsync("TriggerReward", player.Name, rewardName, rewardDetail, player.TileIndex, player.Shield, player.DoubleDice, isExtraTurn);
+                    {
+                        player.PendingTileEventType = "reward";
+                        player.PendingTileIndex = player.TileIndex;
+                        await Clients.Client(player.ConnectionId).SendAsync("TriggerReward", player.Name);
+                    }
                     break;
 
                 case "wheel":
@@ -478,8 +571,9 @@ namespace Backend.Hubs
                     p.TileIndex,
                     p.WrongStreak,
                     p.Shield,
-                    p.SkipTurn,
+                    p.FreezeTimeMs,
                     p.DoubleDice,
+                    p.IsAutoRoll,
                     p.DiceModifier,
                     p.LapCount,
                     p.IsSpectator,

@@ -11,7 +11,7 @@ namespace Backend.Models
         public List<Player> Players { get; set; } = new();
         public int ActivePlayerIndex { get; set; } = 0;
         public bool IsStarted { get; set; } = false;
-        public int GameDurationMinutes { get; set; } = 30;
+        public int GameDurationMinutes { get; set; } = 10;
         public System.DateTime? GameStartTime { get; set; }
 
         /// <summary>Cached questions loaded from Supabase at game start.</summary>

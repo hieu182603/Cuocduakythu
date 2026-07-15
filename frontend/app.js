@@ -333,7 +333,9 @@ function initApp() {
         if (modal) modal.classList.remove("active");
     };
     safeAddListener("btn-close-lobby-settings-modal", "click", closeLobbySettings);
-    safeAddListener("lobby-settings-overlay", "click", closeLobbySettings);
+    safeAddListener("lobby-settings-modal", "click", (e) => {
+        if (e.target.id === "lobby-settings-modal") closeLobbySettings();
+    });
     safeAddListener("btn-save-lobby-settings", "click", closeLobbySettings);
 
     // Lobby count selectors
@@ -356,8 +358,8 @@ function initApp() {
             const specChk = document.getElementById("chk-host-spectate");
             const isSpectator = specChk ? specChk.checked : false;
             const durInput = document.getElementById("input-game-duration");
-            const durationVal = durInput ? parseInt(durInput.value) : 30;
-            const durationMinutes = isNaN(durationVal) || durationVal <= 0 ? 30 : durationVal;
+            const durationVal = durInput ? parseInt(durInput.value) : 10;
+            const durationMinutes = isNaN(durationVal) || durationVal <= 0 ? 10 : durationVal;
             connection.invoke("StartGame", roomCode, isSpectator, durationMinutes)
                 .catch(err => console.error("Error starting game: ", err));
         } else {

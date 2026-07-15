@@ -23,13 +23,13 @@ namespace Backend.Services
         (bool isCorrect, string penaltyText) ProcessAnswer(Player player, McqQuestion question, int answerIndex);
 
         // ── Traps ──
-        (string name, string detail) ApplyTrap(Player player, List<Player> allPlayers);
+        (string name, string detail, string movementDirection, int movementSteps) ApplyTrap(Player player);
 
         // ── Rewards ──
-        (string name, string detail, bool isExtraTurn) ApplyReward(Player player);
+        (string name, string detail, bool isAutoRoll, string movementDirection, int movementSteps) ApplyReward(Player player);
 
         // ── Wheel ──
-        (int sectorIndex, string label, string desc, bool isReward) SpinWheel(Player player);
+        (int sectorIndex, string label, string desc, bool isReward, string movementDirection, int movementSteps) SpinWheel(Player player);
 
         // ── Room Management ──
         string GenerateRoomCode();

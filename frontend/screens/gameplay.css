@@ -116,7 +116,7 @@
 
 .sb-name {
     font-family: var(--font-title);
-    font-size: 1.05rem !important;
+    font-size: 0.85rem !important;
     font-weight: 900 !important;
     color: #3c2f2f !important;
     white-space: nowrap;

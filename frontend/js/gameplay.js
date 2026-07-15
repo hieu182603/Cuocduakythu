@@ -385,6 +385,11 @@ function renderBoard() {
             isGameplayMuted = !isGameplayMuted;
             localStorage.setItem("map_muted", isGameplayMuted);
             updateGameplaySoundButton();
+            if (isGameplayMuted) {
+                stopTickingClock();
+            } else if (questionTimerInterval) {
+                playTickingClock();
+            }
         };
     }
 
@@ -520,6 +525,8 @@ function playSFX(type) {
 }
 
 let gameplayBgmAudio = null;
+let tickingClockAudio = null;
+let questionTimerInterval = null;
 let isGameplayMuted = localStorage.getItem("map_muted") === "true";
 
 function initGameplayAudio() {
@@ -530,15 +537,36 @@ function initGameplayAudio() {
     }
 }
 
+function initTickingClockAudio() {
+    if (!tickingClockAudio) {
+        tickingClockAudio = new Audio("sound/ticking-clock.mp3");
+        tickingClockAudio.loop = true;
+        tickingClockAudio.volume = 0.55;
+    }
+}
+
 function playGameplayBGM() {
     initGameplayAudio();
     if (isGameplayMuted) return;
+    if (questionTimerInterval) return; // Don't play BGM if question timer is running
     gameplayBgmAudio.play().catch(e => console.log("BGM Play prevented:", e.message));
 }
 
 function stopGameplayBGM() {
     if (gameplayBgmAudio) {
         gameplayBgmAudio.pause();
+    }
+}
+
+function playTickingClock() {
+    initTickingClockAudio();
+    tickingClockAudio.currentTime = 0;
+    tickingClockAudio.play().catch(e => console.log("Ticking clock play prevented:", e.message));
+}
+
+function stopTickingClock() {
+    if (tickingClockAudio) {
+        tickingClockAudio.pause();
     }
 }
 
@@ -565,6 +593,7 @@ function updateGameplaySoundButton() {
 
 document.addEventListener('click', () => {
     initGameplayAudio();
+    initTickingClockAudio();
     if (gameplayBgmAudio && gameplayBgmAudio.paused && !isGameplayMuted) {
         playGameplayBGM();
     }
@@ -583,7 +612,8 @@ function renderScoreboard() {
                 return b.lapCount - a.lapCount;
             }
             return b.tileIndex - a.tileIndex;
-        });
+        })
+        .slice(0, 10);
 
     sorted.forEach((p, index) => {
         const row = document.createElement("div");
@@ -591,7 +621,6 @@ function renderScoreboard() {
         
         let statusBadges = "";
         if(p.shield) statusBadges += `<i class="fa-solid fa-shield-halved sb-shield" title="Có Lá Chắn"></i>`;
-        if(p.skipTurn) statusBadges += `<i class="fa-solid fa-ban sb-skip" title="Mất Lượt"></i>`;
         if(p.doubleDice) statusBadges += `<i class="fa-solid fa-angles-up sb-shield" style="color:var(--warning);" title="Nhân đôi xúc xắc"></i>`;
 
         row.innerHTML = `
@@ -724,6 +753,56 @@ function roll3DDice(visualDice, value) {
     visualDice.style.transform = `rotateX(${finalX}deg) rotateY(${finalY}deg) rotateZ(${extraZ}deg)`;
 }
 
+// Window function to check state after popup closes
+window.checkPostPopupState = function() {
+    if (myPlayerId === -1) return; // Spectator doesn't roll
+    const me = players.find(p => p.id === myPlayerId);
+    if (!me) return;
+
+    const btn = document.getElementById("btn-roll-dice");
+    const info = document.getElementById("center-interactive-info");
+    
+    // Clear any previous freeze interval
+    if (window.freezeInterval) {
+        clearInterval(window.freezeInterval);
+        window.freezeInterval = null;
+    }
+
+    if (me.freezeTimeMs > 0) {
+        btn.disabled = true;
+        let timeLeft = me.freezeTimeMs / 1000;
+        info.innerText = `Bị đóng băng! Chờ ${timeLeft}s`;
+        
+        window.freezeInterval = setInterval(() => {
+            timeLeft--;
+            if (timeLeft <= 0) {
+                clearInterval(window.freezeInterval);
+                window.freezeInterval = null;
+                me.freezeTimeMs = 0; // Clear locally
+                
+                if (me.isAutoRoll) {
+                    me.isAutoRoll = false;
+                    info.innerText = "Tự động tung xúc xắc...";
+                    setTimeout(() => btn.click(), 500);
+                } else {
+                    btn.disabled = false;
+                    info.innerText = "Hãy tiếp tục tung xúc xắc!";
+                }
+            } else {
+                info.innerText = `Bị đóng băng! Chờ ${timeLeft}s`;
+            }
+        }, 1000);
+    } else if (me.isAutoRoll) {
+        me.isAutoRoll = false;
+        btn.disabled = true;
+        info.innerText = "Tự động tung xúc xắc...";
+        setTimeout(() => btn.click(), 1000);
+    } else {
+        btn.disabled = false;
+        info.innerText = "Hãy tiếp tục tung xúc xắc!";
+    }
+};
+
 // Rolling Dice physics & state triggers
 function handleRollDice() {
     document.getElementById("btn-roll-dice").disabled = true;
@@ -818,67 +897,126 @@ function movePlayerSequentially(player, steps) {
     doStep();
 }
 
-function movePlayerSequentiallyOnline(playerId, targetTileIndex, lapCompleted) {
-    const player = players.find(p => p.id === playerId);
-    if (!player) return;
+function resetOnlineMovementQueue() {
+    onlineMovementQueue = [];
+    onlineMovementQueueVersion++;
+    isOnlineMovementQueueRunning = false;
+    isMovementAnimating = false;
+}
 
-    const oldIndex = player.tileIndex;
-    let steps = (targetTileIndex - oldIndex + TILE_COORDS.length) % TILE_COORDS.length;
+function queueOnlineMovement(movement) {
+    onlineMovementQueue.push({ type: "movement", ...movement });
+    processOnlineMovementQueue();
+}
 
-    if (steps === 0) {
-        player.tileIndex = targetTileIndex;
-        player.lapCount = lapCompleted;
-        updatePlayerPositionsOnBoard();
-        renderScoreboard();
-        isMovementAnimating = false;
-        if (pendingEvent) {
-            pendingEvent();
-            pendingEvent = null;
+function queueOnlineCallback(callback) {
+    onlineMovementQueue.push({ type: "callback", callback });
+    processOnlineMovementQueue();
+}
+
+async function processOnlineMovementQueue() {
+    if (isOnlineMovementQueueRunning) return;
+
+    isOnlineMovementQueueRunning = true;
+    const queueVersion = onlineMovementQueueVersion;
+
+    while (queueVersion === onlineMovementQueueVersion && onlineMovementQueue.length > 0) {
+        const queueItem = onlineMovementQueue.shift();
+
+        if (queueItem.type === "callback") {
+            const result = queueItem.callback();
+            if (result instanceof Promise) {
+                await result;
+            }
+            continue;
         }
-        return;
+
+        if (queueItem.delayBeforeMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, queueItem.delayBeforeMs));
+            if (queueVersion !== onlineMovementQueueVersion) return;
+        }
+
+        await movePlayerSequentiallyOnline(
+            queueItem.playerId,
+            queueItem.targetTileIndex,
+            queueItem.lapCompleted,
+            queueItem.direction,
+            queueItem.steps
+        );
     }
 
-    let currentStep = 0;
-    let stepDelay = 400; // milliseconds
-    if(speedSetting === "fast") stepDelay = 200;
-    if(speedSetting === "instant") stepDelay = 0;
+    if (queueVersion === onlineMovementQueueVersion) {
+        isOnlineMovementQueueRunning = false;
+    }
+}
 
-    isMovementAnimating = true;
+function movePlayerSequentiallyOnline(playerId, targetTileIndex, lapCompleted, direction = "forward", steps = null) {
+    return new Promise(resolve => {
+        const player = players.find(p => p.id === playerId);
+        if (!player) {
+            resolve();
+            return;
+        }
 
-    function doStep() {
-        if (currentStep < steps) {
-            player.tileIndex = (player.tileIndex + 1) % TILE_COORDS.length;
+        const tileCount = TILE_COORDS.length;
+        const oldIndex = player.tileIndex;
+        const isBackward = direction === "backward";
+        const isTeleport = direction === "teleport" || direction === "sync";
+        const calculatedSteps = isBackward
+            ? (oldIndex - targetTileIndex + tileCount) % tileCount
+            : (targetTileIndex - oldIndex + tileCount) % tileCount;
+        const totalSteps = Number.isInteger(steps) && steps >= 0 ? steps : calculatedSteps;
 
-            // Highlight active landing tile
-            document.querySelectorAll(".tile").forEach(t => t.classList.remove("active-landing"));
-            const activeTile = document.getElementById(`tile-${player.tileIndex}`);
-            if (activeTile) activeTile.classList.add("active-landing");
-
-            // Animate local hop
-            updatePlayerPositionsOnBoard();
-            const token = document.getElementById(`player-token-${player.id}`);
-            if (token && speedSetting !== "instant") {
-                token.classList.add("horse-hop");
-                setTimeout(() => token.classList.remove("horse-hop"), 300);
-            }
-
-            currentStep++;
-            setTimeout(doStep, stepDelay);
-        } else {
+        function finishMovement() {
             player.tileIndex = targetTileIndex;
             player.lapCount = lapCompleted;
             updatePlayerPositionsOnBoard();
             renderScoreboard();
-
             isMovementAnimating = false;
-            if (pendingEvent) {
-                pendingEvent();
-                pendingEvent = null;
+            
+            resolve();
+        }
+
+        if (isTeleport || totalSteps === 0) {
+            finishMovement();
+            return;
+        }
+
+        let currentStep = 0;
+        let stepDelay = 400; // milliseconds
+        if(speedSetting === "fast") stepDelay = 200;
+        if(speedSetting === "instant") stepDelay = 0;
+
+        isMovementAnimating = true;
+
+        function doStep() {
+            if (currentStep < totalSteps) {
+                player.tileIndex = isBackward
+                    ? (player.tileIndex - 1 + tileCount) % tileCount
+                    : (player.tileIndex + 1) % tileCount;
+
+                // Highlight active landing tile
+                document.querySelectorAll(".tile").forEach(t => t.classList.remove("active-landing"));
+                const activeTile = document.getElementById(`tile-${player.tileIndex}`);
+                if (activeTile) activeTile.classList.add("active-landing");
+
+                // Animate local hop
+                updatePlayerPositionsOnBoard();
+                const token = document.getElementById(`player-token-${player.id}`);
+                if (token && speedSetting !== "instant") {
+                    token.classList.add("horse-hop");
+                    setTimeout(() => token.classList.remove("horse-hop"), 300);
+                }
+
+                currentStep++;
+                setTimeout(doStep, stepDelay);
+            } else {
+                finishMovement();
             }
         }
-    }
 
-    doStep();
+        doStep();
+    });
 }
 
 function activateTile(player) {
@@ -914,12 +1052,15 @@ function activateTile(player) {
 
 // Event A: Question popup
 let currentQuestion = null;
-let questionTimerInterval = null;
 let questionTimeRemaining = 15;
 
 function startQuestionTimer(duration, onTimeout) {
     stopQuestionTimer();
     questionTimeRemaining = duration;
+    
+    // Pause BGM and play ticking clock
+    stopGameplayBGM();
+    playTickingClock();
     
     const timerText = document.getElementById("question-timer-text");
     const timerBar = document.getElementById("question-timer-bar");
@@ -955,6 +1096,9 @@ function stopQuestionTimer() {
         clearInterval(questionTimerInterval);
         questionTimerInterval = null;
     }
+    // Stop ticking clock and resume BGM
+    stopTickingClock();
+    playGameplayBGM();
 }
 
 function triggerQuestionEvent(player) {
@@ -1632,11 +1776,6 @@ function startGameTimer(durationMinutes) {
     updateDisplay();
     
     gameTimerInterval = setInterval(() => {
-        // Auto-pause if any game modal is currently active
-        if (document.querySelector('.game-modal.active') || document.querySelector('.game-modal.show')) {
-            return;
-        }
-
         remainingSeconds--;
         if (remainingSeconds <= 0) {
             clearInterval(gameTimerInterval);
@@ -1722,6 +1861,24 @@ function logMessage(text, className = "") {
 }
 
 function initStaticEvents() {
+    safeAddListener("btnBug", "click", () => {
+        showConfirm("Khôi phục trạng thái kẹt (ẩn popup, mở khóa tung xúc xắc)?", () => {
+            const modalsToClose = ["question-modal", "trap-modal", "reward-modal", "wheel-modal"];
+            modalsToClose.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove("active");
+            });
+            if (typeof resetOnlineMovementQueue === "function") resetOnlineMovementQueue();
+            if (typeof window.checkPostPopupState === "function") {
+                window.checkPostPopupState();
+            } else {
+                const btn = document.getElementById("btn-roll-dice");
+                if (btn) btn.disabled = false;
+            }
+            showToast("Đã làm mới trạng thái!", "success");
+        });
+    });
+
     safeAddListener("btnExit", "click", () => {
         showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
             stopGameplayBGM();
