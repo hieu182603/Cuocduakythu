@@ -61,7 +61,7 @@ namespace Backend.Services
             ("Động Đất Trượt Dốc",     "Sự cố địa chấn hung bạo! Lùi ngay 5 ô."),
             ("Đầm Lầy Choáng Váng",    "Nhân vật bị mắc kẹt bùn sâu, mất lượt ở vòng sau."),
             ("Bảo Táp Gió Ngược",      "Gió bão cản trở! Xúc xắc lăn tối đa chỉ được 3 trong 2 lượt tới."),
-            ("Cổng Dịch Chuyển Lỗi",   "Cổng không gian lỗi! Tráo đổi vị trí của bạn với một người chơi ngẫu nhiên."),
+            ("Cổng Dịch Chuyển Lỗi",   "Cổng không gian bị lỗi! Bị tịch thu lá chắn đang có (nếu có) và lùi lại 3 ô."),
             ("Hố Đen Vũ Trụ (Hiếm)",   "Trôi dạt không gian! Bị hút trực tiếp quay về vạch Start.")
         };
 
@@ -230,13 +230,9 @@ namespace Backend.Services
                 case 3: // Dice max 3 for 2 turns
                     player.DiceModifier = 2;
                     break;
-                case 4: // Swap positions
-                    var others = allPlayers.Where(p => p.Id != player.Id).ToList();
-                    if (others.Count > 0)
-                    {
-                        var target = others[_random.Next(others.Count)];
-                        (player.TileIndex, target.TileIndex) = (target.TileIndex, player.TileIndex);
-                    }
+                case 4: // Cổng Dịch Chuyển Lỗi: Mất khiên & Lùi 3 ô
+                    player.Shield = false;
+                    player.TileIndex = Math.Max(0, player.TileIndex - 3);
                     break;
                 case 5: // Return to Start
                     player.TileIndex = 0;

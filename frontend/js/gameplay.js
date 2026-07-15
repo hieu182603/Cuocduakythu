@@ -1096,7 +1096,7 @@ const TRAP_LIST = [
     { type: "lùi-lớn", name: "Động Đất Trượt Dốc", detail: "Sự cố địa chấn hung bạo! Lùi ngay 5 ô.", value: 5 },
     { type: "mất-lượt", name: "Đầm Lầy Choáng Váng", detail: "Nhân vật bị mắc kẹt bùn sâu, mất lượt ở vòng sau.", value: 1 },
     { type: "giảm-xúc-xắc", name: "Bảo Táp Gió Ngược", detail: "Gió bão cản trở! Xúc xắc lăn tối đa chỉ được 3 trong 2 lượt tới.", value: 2 },
-    { type: "đổi-vị-trí", name: "Cổng Dịch Chuyển Lỗi", detail: "Cổng không gian lỗi! Tráo đổi vị trí của bạn với một người chơi ngẫu nhiên.", value: 0 },
+    { type: "đổi-vị-trí", name: "Cổng Dịch Chuyển Lỗi", detail: "Cổng không gian bị lỗi! Bị tịch thu lá chắn đang có (nếu có) và lùi lại 3 ô.", value: 3 },
     { type: "quay-start", name: "Hố Đen Vũ Trụ (Hiếm)", detail: "Trôi dạt không gian! Bị hút trực tiếp quay về vạch Start.", value: 99 }
 ];
 
@@ -1227,14 +1227,9 @@ function applyTrapEffect(player, trap) {
     } else if (trap.type === "quay-start") {
         player.tileIndex = 0;
     } else if (trap.type === "đổi-vị-trí") {
-        let candidates = players.filter(p => p.id !== player.id);
-        if(candidates.length > 0) {
-            let target = candidates[Math.floor(Math.random() * candidates.length)];
-            let temp = player.tileIndex;
-            player.tileIndex = target.tileIndex;
-            target.tileIndex = temp;
-            logMessage(`[${player.name}] đã tráo đổi vị trí với [${target.name}].`, "log-trap");
-        }
+        player.shield = false;
+        player.tileIndex = Math.max(0, player.tileIndex - 3);
+        logMessage(`[${player.name}] bị mất lá chắn và lùi lại 3 ô do Cổng Dịch Chuyển Lỗi.`, "log-trap");
     }
 
     updatePlayerPositionsOnBoard();
