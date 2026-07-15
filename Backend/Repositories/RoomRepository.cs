@@ -27,7 +27,14 @@ namespace Backend.Repositories
 
         public void RemoveRoom(string roomCode)
         {
-            Rooms.TryRemove(roomCode, out _);
+            if (Rooms.TryRemove(roomCode, out var room))
+            {
+                if (room.GameTimer != null)
+                {
+                    room.GameTimer.Dispose();
+                    room.GameTimer = null;
+                }
+            }
         }
 
         public IEnumerable<GameRoom> GetAllRooms()

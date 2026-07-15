@@ -17,6 +17,7 @@ namespace Backend.Hubs
         private readonly IPlayerRepository _playerRepo;
         private readonly IQuestionRepository _questionRepo;
         private readonly IGameService _gameService;
+        private readonly IHubContext<GameHub> _hubContext;
         private readonly ILogger<GameHub> _logger;
 
         public GameHub(
@@ -24,12 +25,14 @@ namespace Backend.Hubs
             IPlayerRepository playerRepo,
             IQuestionRepository questionRepo,
             IGameService gameService,
+            IHubContext<GameHub> hubContext,
             ILogger<GameHub> logger)
         {
             _roomRepo = roomRepo;
             _playerRepo = playerRepo;
             _questionRepo = questionRepo;
             _gameService = gameService;
+            _hubContext = hubContext;
             _logger = logger;
         }
 
@@ -225,6 +228,25 @@ namespace Backend.Hubs
 
             await Clients.Group(roomCode).SendAsync("GameStarted", room.Players, room.ActivePlayerIndex, room.GameDurationMinutes);
             _logger.LogInformation("🚀 [StartGame] Room {RoomCode} has started! Players count: {Count} | Duration: {Duration} min", roomCode, room.Players.Count, room.GameDurationMinutes);
+
+            // Setup server-side timer to end game when time expires
+            if (room.GameTimer != null)
+            {
+                room.GameTimer.Dispose();
+                room.GameTimer = null;
+            }
+
+            room.GameTimer = new System.Threading.Timer(async _ =>
+            {
+                try
+                {
+                    await EndGameDueToTimeoutInternal(roomCode, _hubContext, _roomRepo, _logger);
+                }
+                catch (System.Exception ex)
+                {
+                    _logger.LogError(ex, "Error in server-side game timer callback for room {RoomCode}", roomCode);
+                }
+            }, null, System.TimeSpan.FromMinutes(room.GameDurationMinutes), System.Threading.Timeout.InfiniteTimeSpan);
         }
 
         // ════════════════════════════════════════
@@ -375,11 +397,24 @@ namespace Backend.Hubs
 
 
 
-        public async Task EndGameDueToTimeout(string roomCode)
+        private static async Task EndGameDueToTimeoutInternal(
+            string roomCode, 
+            IHubContext<GameHub> hubContext, 
+            IRoomRepository roomRepo, 
+            ILogger logger)
         {
-            var room = _roomRepo.GetRoom(roomCode);
+            var room = roomRepo.GetRoom(roomCode);
             if (room == null || !room.IsStarted) return;
             
+            // Set IsStarted to false immediately to prevent duplicate runs
+            room.IsStarted = false;
+
+            if (room.GameTimer != null)
+            {
+                room.GameTimer.Dispose();
+                room.GameTimer = null;
+            }
+
             var activeRacers = room.Players.Where(p => !p.IsSpectator).ToList();
             if (activeRacers.Count > 0)
             {
@@ -387,9 +422,15 @@ namespace Backend.Hubs
                     .OrderByDescending(p => p.LapCount)
                     .ThenByDescending(p => p.TileIndex)
                     .First();
-                await Clients.Group(room.RoomCode).SendAsync("StatusUpdate", $"[Server] Hết giờ chơi! Trận đấu kết thúc.", "log-trap");
-                await Clients.Group(room.RoomCode).SendAsync("GameFinished", winner);
+                logger.LogInformation("⏰ [Timer] Room {RoomCode} timeout reached. Ending game automatically.", roomCode);
+                await hubContext.Clients.Group(room.RoomCode).SendAsync("StatusUpdate", $"[Server] Hết giờ chơi! Trận đấu kết thúc.", "log-trap");
+                await hubContext.Clients.Group(room.RoomCode).SendAsync("GameFinished", winner);
             }
+        }
+
+        public async Task EndGameDueToTimeout(string roomCode)
+        {
+            await EndGameDueToTimeoutInternal(roomCode, _hubContext, _roomRepo, _logger);
         }
 
         public async Task RejoinRoom(string roomCode, string sessionToken)

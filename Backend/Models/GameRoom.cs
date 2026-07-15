@@ -16,5 +16,8 @@ namespace Backend.Models
 
         /// <summary>Cached questions loaded from Supabase at game start.</summary>
         public List<McqQuestion> CachedQuestions { get; set; } = new();
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public System.Threading.Timer? GameTimer { get; set; }
     }
 }
