@@ -101,8 +101,7 @@ function initSignalR() {
         }
 
         // Leaderboard visibility during gameplay
-        const isSpectatorHost = (myPlayerId === -1 && connection);
-        const showLeaderboard = isSpectatorHost;
+        const showLeaderboard = true;
         const sbHeader = document.querySelector(".gameplay-sidebar .sidebar-header");
         if (sbHeader) sbHeader.style.display = showLeaderboard ? "block" : "none";
         const sbList = document.getElementById("scoreboard-list");
