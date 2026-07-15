@@ -1,27 +1,4 @@
 <section id="gameplay-screen" class="screen">
-  <div class="sidebar-ctrl">
-    <!-- Nút thoát game -->
-    <button id="btnExit" class="ctrl-btn" title="Thoát trò chơi">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-        <polyline points="16 17 21 12 16 7"></polyline>
-        <line x1="21" y1="12" x2="9" y2="12"></line>
-      </svg>
-    </button>
-    <!-- Nút âm thanh -->
-    <button id="btnSound" class="ctrl-btn" title="Bật/Tắt âm thanh">
-      <i class="fa-solid fa-volume-high"></i>
-    </button>
-    <!-- Nút luật chơi -->
-    <button id="btnHelp" class="ctrl-btn" title="Xem luật chơi">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
-        <circle cx="12" cy="12" r="10"></circle>
-        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
-    </button>
-  </div>
-
   <div class="gameplay-layout">
     <!-- SIDEBAR -->
     <div class="gameplay-sidebar">
@@ -31,6 +8,36 @@
       </div>
       <div id="scoreboard-list" class="scoreboard-list">
         <!-- Được vẽ động qua JS renderScoreboard() -->
+      </div>
+
+      <!-- Nút điều khiển tích hợp ở đáy sidebar -->
+      <div class="sidebar-ctrl">
+        <div class="ctrl-btn-wrapper">
+          <button id="btnExit" class="ctrl-btn" title="Thoát trò chơi">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+          </button>
+          <span class="ctrl-btn-label">THOÁT</span>
+        </div>
+        <div class="ctrl-btn-wrapper">
+          <button id="btnSound" class="ctrl-btn" title="Bật/Tắt âm thanh">
+            <i class="fa-solid fa-volume-high"></i>
+          </button>
+          <span class="ctrl-btn-label">ÂM THANH</span>
+        </div>
+        <div class="ctrl-btn-wrapper">
+          <button id="btnHelp" class="ctrl-btn" title="Xem luật chơi">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </button>
+          <span class="ctrl-btn-label">TRỢ GIÚP</span>
+        </div>
       </div>
     </div>
 

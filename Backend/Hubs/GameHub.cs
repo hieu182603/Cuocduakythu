@@ -521,7 +521,16 @@ namespace Backend.Hubs
                                 var p = currentRoom.Players.FirstOrDefault(x => x.ConnectionId == connId);
                                 if (p != null)
                                 {
+                                    bool wasHost = p.IsHost;
                                     _playerRepo.RemovePlayer(currentRoom, connId);
+                                    
+                                    if (wasHost && currentRoom.Players.Count > 0)
+                                    {
+                                        var newHost = currentRoom.Players.First();
+                                        newHost.IsHost = true;
+                                        _logger.LogWarning("👑 [HostMigration] Host {OldHost} left. Reassigned host role to player {NewHost}.", pName, newHost.Name);
+                                    }
+
                                     await Clients.Group(rCode).SendAsync("PlayerDisconnected", pName, currentRoom.Players);
                                     _logger.LogWarning("❌ [Disconnect] Player {PlayerName} left room {RoomCode} (Lobby).", pName, rCode);
 

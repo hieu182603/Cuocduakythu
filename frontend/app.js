@@ -105,6 +105,13 @@ function initApp() {
         if (modal) {
             modal.classList.add("active");
             
+            // Hide main menu content card smoothly
+            const menuContent = document.querySelector(".menu-content");
+            if (menuContent) {
+                menuContent.style.opacity = "0";
+                menuContent.style.pointerEvents = "none";
+            }
+            
             // Reset modal to Step 1 (Room Code)
             const stepCode = document.getElementById("join-step-code");
             const stepName = document.getElementById("join-step-name");
@@ -133,6 +140,13 @@ function initApp() {
     safeAddListener("btn-cancel-join", "click", () => {
         const modal = document.getElementById("join-room-modal");
         if (modal) modal.classList.remove("active");
+        
+        // Show main menu content card again
+        const menuContent = document.querySelector(".menu-content");
+        if (menuContent) {
+            menuContent.style.opacity = "1";
+            menuContent.style.pointerEvents = "auto";
+        }
     });
 
     safeAddListener("btn-next-join", "click", () => {
@@ -216,6 +230,14 @@ function initApp() {
             .then(() => {
                 const joinModal = document.getElementById("join-room-modal");
                 if (joinModal) joinModal.classList.remove("active");
+                
+                // Restore menu content visibility for future returns
+                const menuContent = document.querySelector(".menu-content");
+                if (menuContent) {
+                    menuContent.style.opacity = "1";
+                    menuContent.style.pointerEvents = "auto";
+                }
+
                 isOnlineMode = true;
                 roomCode = code;
                 localStorage.setItem("saved_room_code", code);
@@ -255,10 +277,7 @@ function initApp() {
         openQuestionsPool();
     });
 
-    safeAddListener("btn-settings", "click", () => {
-        const modal = document.getElementById("settings-modal");
-        if (modal) modal.classList.add("active");
-    });
+
 
     // Lobby Event Listeners
     safeAddListener("btn-lobby-back", "click", () => {

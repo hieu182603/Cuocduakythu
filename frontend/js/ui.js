@@ -30,19 +30,9 @@ function loadSettings() {
     if (localStorage.getItem("settings_sfx")) sfxVol = parseInt(localStorage.getItem("settings_sfx"));
     if (localStorage.getItem("settings_speed")) speedSetting = localStorage.getItem("settings_speed");
     if (localStorage.getItem("settings_vfx")) vfxEnabled = localStorage.getItem("settings_vfx") === "true";
-
-    document.getElementById("music-vol").value = musicVol;
-    document.getElementById("sfx-vol").value = sfxVol;
-    document.getElementById("speed-setting").value = speedSetting;
-    document.getElementById("vfx-enabled").checked = vfxEnabled;
 }
 
 function saveSettings() {
-    musicVol = parseInt(document.getElementById("music-vol").value);
-    sfxVol = parseInt(document.getElementById("sfx-vol").value);
-    speedSetting = document.getElementById("speed-setting").value;
-    vfxEnabled = document.getElementById("vfx-enabled").checked;
-
     localStorage.setItem("settings_music", musicVol);
     localStorage.setItem("settings_sfx", sfxVol);
     localStorage.setItem("settings_speed", speedSetting);
@@ -60,4 +50,13 @@ function showScreen(screenKey) {
             }
         }
     });
+
+    // Ensure menu content is fully restored and visible when showing the menu screen
+    if (screenKey === "menu") {
+        const menuContent = document.querySelector(".menu-content");
+        if (menuContent) {
+            menuContent.style.opacity = "1";
+            menuContent.style.pointerEvents = "auto";
+        }
+    }
 }

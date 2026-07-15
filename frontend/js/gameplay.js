@@ -575,9 +575,9 @@ function renderScoreboard() {
     if (!list) return;
     list.innerHTML = "";
 
-    // Sort players by position (lapCount descending, then tileIndex descending, filter out spectators)
+    // Sort players by position (lapCount descending, then tileIndex descending, filter out spectators and players who haven't completed a lap yet)
     const sorted = [...players]
-        .filter(p => !p.isSpectator)
+        .filter(p => !p.isSpectator && p.lapCount > 0)
         .sort((a, b) => {
             if (b.lapCount !== a.lapCount) {
                 return b.lapCount - a.lapCount;
@@ -596,14 +596,16 @@ function renderScoreboard() {
 
         row.innerHTML = `
             <div class="sb-player-info">
-                <div class="sb-avatar" style="background-color: ${p.character.color}">${p.character.icon}</div>
+                <div class="sb-avatar" style="background-color: ${p.character.color}">
+                    ${characterImageMarkup(p.character, "sb-char-image")}
+                </div>
                 <div class="sb-details">
                     <span class="sb-name">${p.name} ${statusBadges}</span>
                     <span class="sb-char">${p.character.name}</span>
                 </div>
             </div>
             <div class="sb-stats">
-                Vòng <span class="sb-lap" style="color:var(--success); font-weight:900;">${p.lapCount || 0}</span> / Ô <span class="sb-tile">${p.tileIndex + 1}</span>
+                <span class="sb-lap">${p.lapCount} vòng</span>
             </div>
         `;
         list.appendChild(row);

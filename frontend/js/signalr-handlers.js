@@ -770,6 +770,24 @@ function syncLobbyPlayers(playersList) {
         onlineCountEl.innerText = `${playersList.length}/50`;
     }
 
+    // Determine host status dynamically based on playersList
+    const me = playersList.find(p => p.connectionId === connection.connectionId);
+    isHost = me ? me.isHost : false;
+
+    const startBtn = document.getElementById("btn-start-game");
+    const waitMsg = document.getElementById("lobby-waiting-msg");
+    const hostCtrl = document.getElementById("host-only-controls");
+
+    if (isHost) {
+        if (startBtn) startBtn.style.display = "inline-flex";
+        if (waitMsg) waitMsg.style.display = "none";
+        if (hostCtrl) hostCtrl.style.display = "inline-flex";
+    } else {
+        if (startBtn) startBtn.style.display = "none";
+        if (waitMsg) waitMsg.style.display = "block";
+        if (hostCtrl) hostCtrl.style.display = "none";
+    }
+
     // Remove extra cards if players count decreased
     while (listContainer.children.length > playersList.length) {
         listContainer.removeChild(listContainer.lastChild);
