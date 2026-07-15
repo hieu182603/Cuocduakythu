@@ -186,6 +186,17 @@ button {
     visibility: visible;
 }
 
+.modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    z-index: 999;
+}
+
 /* 6. COMMON MODALS (SETTINGS & QUESTION POOL) styling */
 .settings-body {
     display: flex;

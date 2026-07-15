@@ -389,6 +389,7 @@ function renderBoard() {
     safeAddListener("btnExit", "click", () => {
         showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
             if (isOnlineMode && connection) {
+                localStorage.removeItem("saved_room_code");
                 window.location.reload();
             } else {
                 showScreen("menu");

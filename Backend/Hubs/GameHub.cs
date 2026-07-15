@@ -71,6 +71,59 @@ namespace Backend.Hubs
                 await Clients.Caller.SendAsync("Error", "Phòng không tồn tại.");
                 return;
             }
+
+            // Check if player is rejoining an existing room (even if started)
+            var existingPlayer = room.Players.FirstOrDefault(p => p.SessionToken == sessionToken);
+            if (existingPlayer != null)
+            {
+                existingPlayer.ConnectionId = Context.ConnectionId;
+                await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
+
+                if (room.IsStarted)
+                {
+                    int remainingMinutes = room.GameDurationMinutes;
+                    if (room.GameStartTime.HasValue)
+                    {
+                        var elapsed = System.DateTime.UtcNow - room.GameStartTime.Value;
+                        remainingMinutes = (int)System.Math.Max(1, room.GameDurationMinutes - elapsed.TotalMinutes);
+                    }
+
+                    var roomState = new
+                    {
+                        RoomCode = room.RoomCode,
+                        IsStarted = room.IsStarted,
+                        GameDurationMinutes = remainingMinutes,
+                        Players = room.Players.Select(p => new
+                        {
+                            p.Id,
+                            p.ConnectionId,
+                            p.Name,
+                            p.HorseId,
+                            p.TileIndex,
+                            p.WrongStreak,
+                            p.Shield,
+                            p.SkipTurn,
+                            p.DoubleDice,
+                            p.DiceModifier,
+                            p.LapCount,
+                            p.IsSpectator,
+                            p.IsHost,
+                            p.SessionToken
+                        }),
+                        ActivePlayerIndex = room.ActivePlayerIndex
+                    };
+
+                    await Clients.Group(roomCode).SendAsync("StatusUpdate", $"[Hệ thống] {existingPlayer.Name} đã kết nối lại.", "log-reward");
+                    await Clients.Caller.SendAsync("Rejoined", roomState);
+                }
+                else
+                {
+                    await Clients.Group(roomCode).SendAsync("PlayerJoined", room.Players);
+                    await Clients.Caller.SendAsync("RoomCreated", room.RoomCode, room.Players);
+                }
+                return;
+            }
+
             if (room.IsStarted)
             {
                 await Clients.Caller.SendAsync("Error", "Trận đấu đã bắt đầu.");
@@ -415,15 +468,33 @@ namespace Backend.Hubs
                 {
                     if (!room.IsStarted)
                     {
-                        _playerRepo.RemovePlayer(room, Context.ConnectionId);
-                        await Clients.Group(room.RoomCode).SendAsync("PlayerDisconnected", player.Name, room.Players);
-                        _logger.LogWarning("❌ [Disconnect] Player {PlayerName} left room {RoomCode} (Lobby).", player.Name, room.RoomCode);
+                        // 3 seconds grace period to allow refreshing without leaving the lobby
+                        string connId = Context.ConnectionId;
+                        string rCode = room.RoomCode;
+                        string pName = player.Name;
 
-                        if (room.Players.Count == 0)
+                        _ = Task.Run(async () =>
                         {
-                            _roomRepo.RemoveRoom(room.RoomCode);
-                            _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", room.RoomCode);
-                        }
+                            await Task.Delay(3000);
+                            var currentRoom = _roomRepo.GetRoom(rCode);
+                            if (currentRoom != null && !currentRoom.IsStarted)
+                            {
+                                // Check if they haven't reconnected (ConnectionId is still the disconnected one)
+                                var p = currentRoom.Players.FirstOrDefault(x => x.ConnectionId == connId);
+                                if (p != null)
+                                {
+                                    _playerRepo.RemovePlayer(currentRoom, connId);
+                                    await Clients.Group(rCode).SendAsync("PlayerDisconnected", pName, currentRoom.Players);
+                                    _logger.LogWarning("❌ [Disconnect] Player {PlayerName} left room {RoomCode} (Lobby).", pName, rCode);
+
+                                    if (currentRoom.Players.Count == 0)
+                                    {
+                                        _roomRepo.RemoveRoom(rCode);
+                                        _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", rCode);
+                                    }
+                                }
+                            }
+                        });
                     }
                     else
                     {
@@ -432,12 +503,21 @@ namespace Backend.Hubs
                         await Clients.Group(room.RoomCode).SendAsync("PlayerDisconnected", player.Name, room.Players);
                         _logger.LogWarning("🔌 [Disconnect] Player {PlayerName} disconnected from active room {RoomCode}.", player.Name, room.RoomCode);
 
-                        // If all connections are lost, clean up the room
-                        if (room.Players.All(p => string.IsNullOrEmpty(p.ConnectionId)))
+                        // If all connections are lost, clean up the room after a 10 seconds grace period
+                        string rCode = room.RoomCode;
+                        _ = Task.Run(async () =>
                         {
-                            _roomRepo.RemoveRoom(room.RoomCode);
-                            _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", room.RoomCode);
-                        }
+                            await Task.Delay(10000);
+                            var currentRoom = _roomRepo.GetRoom(rCode);
+                            if (currentRoom != null && currentRoom.IsStarted)
+                            {
+                                if (currentRoom.Players.All(p => string.IsNullOrEmpty(p.ConnectionId)))
+                                {
+                                    _roomRepo.RemoveRoom(rCode);
+                                    _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", rCode);
+                                }
+                            }
+                        });
                     }
                     break;
                 }

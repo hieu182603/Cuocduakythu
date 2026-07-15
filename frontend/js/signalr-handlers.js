@@ -612,6 +612,12 @@ function initSignalR() {
     });
 
     connection.on("Error", (msg) => {
+        const lobbyActive = screens.lobby && screens.lobby.classList.contains("active");
+        const gameplayActive = screens.gameplay && screens.gameplay.classList.contains("active");
+        if (!lobbyActive && !gameplayActive && (msg.includes("không tồn tại") || msg.includes("đã bị xóa") || msg.includes("Không tìm thấy"))) {
+            localStorage.removeItem("saved_room_code");
+            return;
+        }
         showNotification("Lỗi máy chủ: " + msg, "error");
     });
 
