@@ -913,7 +913,7 @@ function activateTile(player) {
 // Event A: Question popup
 let currentQuestion = null;
 let questionTimerInterval = null;
-let questionTimeRemaining = 30;
+let questionTimeRemaining = 15;
 
 function startQuestionTimer(duration, onTimeout) {
     stopQuestionTimer();
@@ -992,8 +992,8 @@ function triggerQuestionEvent(player) {
 
     modal.classList.add("active");
 
-    // Khởi chạy đếm ngược 30 giây (Offline)
-    startQuestionTimer(30, () => {
+    // Khởi chạy đếm ngược 15 giây (Offline)
+    startQuestionTimer(15, () => {
         logMessage(`[${player.name}] đã HẾT GIỜ trả lời câu hỏi!`, "log-trap");
         
         // Disable all buttons

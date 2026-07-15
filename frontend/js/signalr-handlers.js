@@ -173,7 +173,7 @@ function initSignalR() {
 
             modal.classList.add("active");
 
-            startQuestionTimer(30, () => {
+            startQuestionTimer(15, () => {
                 if (isActive) {
                     connection.invoke("SubmitAnswer", roomCode, -1);
                 }
