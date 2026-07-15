@@ -1724,9 +1724,30 @@ function logMessage(text, className = "") {
 function initStaticEvents() {
     safeAddListener("btnExit", "click", () => {
         showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
+            stopGameplayBGM();
+            
+            // Close any open modals
+            const modalsToClose = ["question-modal", "trap-modal", "reward-modal", "wheel-modal"];
+            modalsToClose.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.remove("active");
+            });
+
             if (isOnlineMode && connection) {
                 localStorage.removeItem("saved_room_code");
-                window.location.reload();
+                if (connection.state === "Connected") {
+                    connection.stop().then(() => {
+                        isOnlineMode = false;
+                        showScreen("menu");
+                    }).catch(err => {
+                        console.error(err);
+                        isOnlineMode = false;
+                        showScreen("menu");
+                    });
+                } else {
+                    isOnlineMode = false;
+                    showScreen("menu");
+                }
             } else {
                 showScreen("menu");
             }

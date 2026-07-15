@@ -281,10 +281,22 @@ function initApp() {
 
     // Lobby Event Listeners
     safeAddListener("btn-lobby-back", "click", () => {
-        if(isOnlineMode && connection) {
+        if (isOnlineMode && connection) {
             showConfirm("Bạn có chắc chắn muốn rời phòng chờ?", () => {
                 localStorage.removeItem("saved_room_code");
-                window.location.reload();
+                if (connection.state === "Connected") {
+                    connection.stop().then(() => {
+                        isOnlineMode = false;
+                        showScreen("menu");
+                    }).catch(err => {
+                        console.error(err);
+                        isOnlineMode = false;
+                        showScreen("menu");
+                    });
+                } else {
+                    isOnlineMode = false;
+                    showScreen("menu");
+                }
             });
         } else {
             showScreen("menu");
