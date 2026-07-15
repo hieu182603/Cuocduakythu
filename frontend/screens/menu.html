@@ -23,14 +23,29 @@
         <div class="modal-overlay"></div>
         <div class="modal-card join-modal-card">
             <h2 class="modal-title">Tham Gia Phòng</h2>
-            <p class="modal-subtitle">Nhập mã phòng để tham gia cùng bạn bè</p>
-            <input type="text" id="join-room-code" class="join-room-input" placeholder="NHẬP MÃ PHÒNG" maxlength="5">
-            <input type="text" id="join-player-name" class="join-player-name-input" placeholder="NHẬP TÊN CỦA BẠN" maxlength="15">
-            <div class="modal-actions">
-                <button id="btn-submit-join" class="btn btn-success">
-                    <i class="fa-solid fa-right-to-bracket"></i> Tham Gia
-                </button>
-                <button id="btn-cancel-join" class="btn btn-secondary btn-sm">Hủy</button>
+            
+            <!-- Bước 1: Nhập mã phòng -->
+            <div id="join-step-code">
+                <p class="modal-subtitle">Nhập mã phòng để tham gia cùng bạn bè</p>
+                <input type="text" id="join-room-code" class="join-room-input" placeholder="NHẬP MÃ PHÒNG" maxlength="5">
+                <div class="modal-actions">
+                    <button id="btn-next-join" class="btn btn-success">
+                        Tiếp Tục <i class="fa-solid fa-arrow-right"></i>
+                    </button>
+                    <button id="btn-cancel-join" class="btn btn-secondary btn-sm">Hủy</button>
+                </div>
+            </div>
+
+            <!-- Bước 2: Nhập tên -->
+            <div id="join-step-name" style="display: none;">
+                <p class="modal-subtitle">Nhập tên của bạn để hiển thị trong phòng</p>
+                <input type="text" id="join-player-name" class="join-player-name-input" placeholder="NHẬP TÊN CỦA BẠN" maxlength="15">
+                <div class="modal-actions">
+                    <button id="btn-submit-join" class="btn btn-success">
+                        <i class="fa-solid fa-right-to-bracket"></i> Tham Gia
+                    </button>
+                    <button id="btn-back-join" class="btn btn-secondary btn-sm">Quay Lại</button>
+                </div>
             </div>
         </div>
     </div>

@@ -105,6 +105,18 @@ function initApp() {
         if (modal) {
             modal.classList.add("active");
             
+            // Reset modal to Step 1 (Room Code)
+            const stepCode = document.getElementById("join-step-code");
+            const stepName = document.getElementById("join-step-name");
+            if (stepCode) stepCode.style.display = "block";
+            if (stepName) stepName.style.display = "none";
+            
+            const codeInput = document.getElementById("join-room-code");
+            if (codeInput) {
+                codeInput.value = "";
+                setTimeout(() => codeInput.focus(), 100);
+            }
+
             // Prefill name from local storage or default
             let savedName = "";
             try {
@@ -122,6 +134,61 @@ function initApp() {
         const modal = document.getElementById("join-room-modal");
         if (modal) modal.classList.remove("active");
     });
+
+    safeAddListener("btn-next-join", "click", () => {
+        const codeInput = document.getElementById("join-room-code");
+        const code = codeInput ? codeInput.value.trim().toUpperCase() : "";
+        if (code.length !== 5) {
+            showNotification("Mã phòng phải có đúng 5 ký tự.", "error");
+            if (codeInput) codeInput.focus();
+            return;
+        }
+        
+        const stepCode = document.getElementById("join-step-code");
+        const stepName = document.getElementById("join-step-name");
+        if (stepCode) stepCode.style.display = "none";
+        if (stepName) {
+            stepName.style.display = "block";
+            const nameInput = document.getElementById("join-player-name");
+            if (nameInput) {
+                setTimeout(() => nameInput.focus(), 100);
+            }
+        }
+    });
+
+    safeAddListener("btn-back-join", "click", () => {
+        const stepCode = document.getElementById("join-step-code");
+        const stepName = document.getElementById("join-step-name");
+        if (stepCode) {
+            stepCode.style.display = "block";
+            const codeInput = document.getElementById("join-room-code");
+            if (codeInput) {
+                setTimeout(() => codeInput.focus(), 100);
+            }
+        }
+        if (stepName) stepName.style.display = "none";
+    });
+
+    // Enter key listeners for Join modal inputs
+    const joinCodeInput = document.getElementById("join-room-code");
+    if (joinCodeInput) {
+        joinCodeInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                const nextBtn = document.getElementById("btn-next-join");
+                if (nextBtn) nextBtn.click();
+            }
+        });
+    }
+
+    const joinNameInput = document.getElementById("join-player-name");
+    if (joinNameInput) {
+        joinNameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                const submitBtn = document.getElementById("btn-submit-join");
+                if (submitBtn) submitBtn.click();
+            }
+        });
+    }
 
     safeAddListener("btn-submit-join", "click", () => {
         if (!connection || connection.state !== "Connected") {
