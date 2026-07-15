@@ -1,5 +1,7 @@
 {
   "rewrites": [
+    { "source": "/gameHub/(.*)", "destination": "http://160.187.229.201:5089/gameHub/$1" },
+    { "source": "/api/(.*)", "destination": "http://160.187.229.201:5089/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
