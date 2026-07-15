@@ -123,16 +123,22 @@ namespace Backend.Services
         // MOVEMENT
         // ════════════════════════════════════════
 
-        public void MovePlayer(Player player, int totalMove)
+        private void MovePlayerForward(Player player, int steps)
         {
+            if (steps <= 0) return;
             int oldIndex = player.TileIndex;
-            player.TileIndex = (player.TileIndex + totalMove) % TotalTiles;
+            player.TileIndex = (player.TileIndex + steps) % TotalTiles;
 
             // Detect lap completion (passed or landed on Start after leaving it)
             if (player.TileIndex < oldIndex || (oldIndex > 0 && player.TileIndex == 0))
             {
                 player.LapCount++;
             }
+        }
+
+        public void MovePlayer(Player player, int totalMove)
+        {
+            MovePlayerForward(player, totalMove);
         }
 
         public string GetTileType(int tileIndex)
@@ -253,7 +259,7 @@ namespace Backend.Services
             switch (rewardIdx)
             {
                 case 0: // Tiến 3
-                    player.TileIndex = Math.Min(TotalTiles - 1, player.TileIndex + 3);
+                    MovePlayerForward(player, 3);
                     break;
                 case 1: // Shield
                     player.Shield = true;
@@ -287,16 +293,16 @@ namespace Backend.Services
             switch (idx)
             {
                 case 0:  player.TileIndex = Math.Max(0, player.TileIndex - 3); break;                  // Lùi 3
-                case 1:  player.TileIndex = Math.Min(TotalTiles - 1, player.TileIndex + 3); break;      // Tiến 3
+                case 1:  MovePlayerForward(player, 3); break;                                           // Tiến 3
                 case 2:  player.SkipTurn = true; break;                                                 // Mất lượt
                 case 3:  player.IsExtraTurn = true; break;                                              // Thêm lượt
                 case 4:  player.TileIndex = Math.Max(0, player.TileIndex - 2); break;                   // Lùi 2
                 case 5:  player.Shield = true; break;                                                   // Nhận Khiên
                 case 6:  player.DoubleDice = true; break;                                               // x2 xúc xắc
                 case 7:  player.TileIndex = 0; break;                                                   // Quay về Start
-                case 8:  player.TileIndex = Math.Min(TotalTiles - 1, player.TileIndex + 2); break;      // Tiến 2
+                case 8:  MovePlayerForward(player, 2); break;                                           // Tiến 2
                 case 9:  player.Shield = false; break;                                                  // Mất Khiên
-                case 10: player.TileIndex = Math.Min(TotalTiles - 1, player.TileIndex + 5); break;      // Tiến 5
+                case 10: MovePlayerForward(player, 5); break;                                           // Tiến 5
                 case 11: player.TileIndex = Math.Max(0, player.TileIndex - 5); break;                   // Lùi 5
             }
 
