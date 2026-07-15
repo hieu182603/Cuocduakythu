@@ -10,11 +10,25 @@ document.addEventListener("DOMContentLoaded", () => {
             initApp();
             initStaticEvents();
 
-            // Global click sound effect listener
+            // Global click sound effect listener and delegation
             document.addEventListener("click", (e) => {
-                if (e.target && (e.target.tagName === "BUTTON" || e.target.closest("button") || e.target.classList.contains("event-card"))) {
+                const target = e.target;
+                
+                // Sound effect
+                if (target && (target.tagName === "BUTTON" || target.closest("button") || target.classList.contains("event-card"))) {
                     if (typeof playSFX === "function") {
                         playSFX("click");
+                    }
+                }
+                
+                // Victory Screen actions
+                const btn = target.closest("button");
+                if (btn) {
+                    if (btn.id === "btn-play-again") {
+                        resetGameStates();
+                        showScreen("lobby");
+                    } else if (btn.id === "btn-victory-home") {
+                        showScreen("menu");
                     }
                 }
             });
@@ -415,16 +429,7 @@ function initApp() {
         if (!isOnlineMode) nextTurn();
     });
 
-    // 6. Victory Event Listeners
-    safeAddListener("btn-play-again", "click", () => {
-        resetGameStates();
-        showScreen("lobby");
-    });
-
-    safeAddListener("btn-victory-home", "click", () => {
-        showScreen("menu");
-    });
-
+    // 6. Victory Event Listeners are handled via global click delegation to avoid DOM timing issues
     // Render Lobby initially
     renderPlayerSetupCards(4);
 }

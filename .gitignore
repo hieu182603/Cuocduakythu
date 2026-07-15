@@ -25,3 +25,6 @@ skills-lock.json
 # OS files
 .DS_Store
 Thumbs.db
+
+# Node / Frontend
+frontend/node_modules/

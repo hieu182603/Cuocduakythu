@@ -487,6 +487,19 @@ namespace Backend.Hubs
 
 
 
+        public async Task ForceEndGame(string roomCode)
+        {
+            var room = _roomRepo.GetRoom(roomCode);
+            if (room == null || !room.IsStarted) return;
+
+            // Only allow host to force end the game
+            var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+            if (player == null || !player.IsHost) return;
+
+            _logger.LogInformation("⚠️ [ForceEndGame] Host {PlayerName} requested to end the game in Room {RoomCode}.", player.Name, roomCode);
+            await EndGameDueToTimeoutInternal(roomCode, _hubContext, _roomRepo, _logger);
+        }
+
         private static async Task EndGameDueToTimeoutInternal(
             string roomCode, 
             IHubContext<GameHub> hubContext, 

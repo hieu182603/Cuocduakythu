@@ -125,8 +125,7 @@ function initSignalR() {
             visualDice1.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
             visualDice1.classList.remove("dice-shake");
         }
-        const diceModifiersDesc = document.getElementById("dice-modifiers-desc");
-        if (diceModifiersDesc) diceModifiersDesc.innerText = "";
+    
 
         showScreen("gameplay");
         logMessage("Cuộc đua online đã bắt đầu! Đang ở vạch xuất phát.", "log-win");
@@ -135,16 +134,9 @@ function initSignalR() {
     connection.on("DiceRolled", (playerName, rollVal1, rollVal2, totalMove) => {
         const dice1 = document.getElementById("visual-dice-1");
         roll3DDice(dice1, rollVal1);
-        document.getElementById("dice-modifiers-desc").innerText = `Đang tung xúc xắc...`;
         
-        const isDouble = (totalMove === rollVal1 * 2) && (totalMove !== rollVal1);
-
         setTimeout(() => {
-            if (isDouble) {
-                document.getElementById("dice-modifiers-desc").innerText = `Double Dice: ${rollVal1} x 2 = ${totalMove} ô`;
-            } else {
-                document.getElementById("dice-modifiers-desc").innerText = `Di chuyển: ${totalMove} ô`;
-            }
+            const isDouble = (totalMove === rollVal1 * 2) && (totalMove !== rollVal1);
             logMessage(`[${playerName}] xúc xắc được ${rollVal1} (Di chuyển: ${totalMove} ô).`);
         }, 1500);
     });
@@ -203,6 +195,11 @@ function initSignalR() {
                 
                 if (isActive) {
                     btn.addEventListener("click", () => {
+                        if (btn.disabled) return;
+                        const allBtns = document.querySelectorAll(".answer-btn");
+                        allBtns.forEach(b => b.classList.remove("active"));
+                        btn.classList.add("active");
+                        
                         stopQuestionTimer();
                         connection.invoke("SubmitAnswer", roomCode, idx);
                     });
@@ -622,6 +619,13 @@ function initSignalR() {
     });
 
     connection.on("GameFinished", (winner) => {
+        // Hydrate for ALL players as fallback
+        players.forEach(p => {
+            if (!p.character) {
+                p.character = CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0];
+            }
+        });
+        
         const localWinner = players.find(p => p.id === winner.id) || winner;
         if (!localWinner.character) {
             localWinner.character = CHARACTER_DATABASE.find(c => c.id === localWinner.horseId) || CHARACTER_DATABASE[0];

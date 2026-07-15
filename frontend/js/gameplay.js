@@ -1791,54 +1791,76 @@ function startGameTimer(durationMinutes) {
 
 // Victory Screen Trigger
 function triggerVictory(winner) {
-    localStorage.removeItem("saved_room_code");
-    if (gameTimerInterval) {
-        clearInterval(gameTimerInterval);
-        gameTimerInterval = null;
-    }
-    const timerCard = document.getElementById("game-timer-card");
-    if (timerCard) timerCard.style.display = "none";
+    try {
+        localStorage.removeItem("saved_room_code");
+        if (gameTimerInterval) {
+            clearInterval(gameTimerInterval);
+            gameTimerInterval = null;
+        }
+        const timerCard = document.getElementById("game-timer-card");
+        if (timerCard) timerCard.style.display = "none";
+        const sceneTimerCard = document.getElementById("sceneTimer");
+        if (sceneTimerCard) sceneTimerCard.style.display = "none";
 
-    logMessage(`🎉 KÌ TÍCH! Tay đua [${winner.name}] chơi nhân vật [${winner.character.name}] đã chính thức vô địch!`, "log-win");
-    
-    // Populate winner card
-    document.getElementById("winner-avatar").style.backgroundColor = winner.character.color;
-    document.getElementById("winner-avatar").innerHTML = winner.character.icon;
-    document.getElementById("winner-name").innerText = winner.name;
-    document.getElementById("winner-char").innerText = `${winner.character.name} (${winner.character.badge})`;
-
-    // Populate leaderboard table
-    const table = document.getElementById("victory-leaderboard-list");
-    table.innerHTML = "";
-
-    // Sort by position (lapCount descending, then tileIndex descending, filter out spectators)
-    const sorted = [...players]
-        .filter(p => !p.isSpectator)
-        .sort((a, b) => {
-            if (b.lapCount !== a.lapCount) {
-                return b.lapCount - a.lapCount;
-            }
-            return b.tileIndex - a.tileIndex;
-        });
-    
-    sorted.forEach((p, idx) => {
-        const row = document.createElement("div");
-        row.className = "lb-row";
+        const winnerChar = winner.character || CHARACTER_DATABASE[0];
+        logMessage(`🎉 KÌ TÍCH! Tay đua [${winner.name}] chơi nhân vật [${winnerChar.name}] đã chính thức vô địch!`, "log-win");
         
-        row.innerHTML = `
-            <div class="lb-player">
-                <span class="lb-rank lb-rank-${idx + 1}">${idx + 1}</span>
-                <span class="lb-avatar" style="background-color: ${p.character.color}">${p.character.icon}</span>
-                <span class="lb-name">${p.name}</span>
-            </div>
-            <div class="lb-score">Vòng ${p.lapCount || 0} - Ô ${p.tileIndex + 1} / ${p.character.name}</div>
-        `;
-        table.appendChild(row);
-    });
+        // Populate winner card
+        const winnerAvatar = document.getElementById("winner-avatar");
+        if (winnerAvatar) {
+            winnerAvatar.style.backgroundColor = winnerChar.color;
+            winnerAvatar.innerHTML = winnerChar.icon;
+        }
+        
+        const winnerName = document.getElementById("winner-name");
+        if (winnerName) winnerName.innerText = winner.name;
+        
+        const winnerCharEl = document.getElementById("winner-char");
+        if (winnerCharEl) winnerCharEl.innerText = `${winnerChar.name} (${winnerChar.badge})`;
 
-    setTimeout(() => {
-        showScreen("victory");
-    }, 1500);
+        // Populate leaderboard table
+        const table = document.getElementById("victory-leaderboard-list");
+        if (table) {
+            table.innerHTML = "";
+
+            // Sort by position (lapCount descending, then tileIndex descending, filter out spectators)
+            const sorted = [...players]
+                .filter(p => !p.isSpectator)
+                .sort((a, b) => {
+                    const lapA = a.lapCount || 0;
+                    const lapB = b.lapCount || 0;
+                    if (lapB !== lapA) {
+                        return lapB - lapA;
+                    }
+                    const tileA = a.tileIndex || 0;
+                    const tileB = b.tileIndex || 0;
+                    return tileB - tileA;
+                })
+                .slice(0, 10);
+            
+            sorted.forEach((p, idx) => {
+                const char = p.character || CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0];
+                const row = document.createElement("div");
+                row.className = "lb-row";
+                
+                row.innerHTML = `
+                    <div class="lb-player">
+                        <span class="lb-rank lb-rank-${idx + 1}">${idx + 1}</span>
+                        <span class="lb-avatar" style="background-color: ${char.color}">${char.icon}</span>
+                        <span class="lb-name">${p.name}</span>
+                    </div>
+                    <div class="lb-score">Vòng ${p.lapCount || 0} - Ô ${(p.tileIndex || 0) + 1} / ${char.name}</div>
+                `;
+                table.appendChild(row);
+            });
+        }
+    } catch (error) {
+        console.error("Lỗi khi render bảng xếp hạng victory:", error);
+    } finally {
+        setTimeout(() => {
+            showScreen("victory");
+        }, 1500);
+    }
 }
 
 // Helper: Log message to the in-game console
