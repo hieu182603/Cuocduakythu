@@ -773,16 +773,18 @@ function syncLobbyPlayers(playersList) {
 
         card.innerHTML = `
             <div class="player-card-num">Người chơi ${idx + 1} ${isMe ? '(Bạn)' : ''}</div>
-            ${inputHtml}
             <button type="button" class="char-pick-btn" id="btn-pick-char-${idx}" data-index="${idx}" data-character-id="${character.id}" ${isMe ? '' : 'disabled style="cursor:not-allowed;"'}>
-                <span class="selected-info">
-                    <span class="selected-character-avatar" style="background-color: ${character.color}">
+                <div class="selected-info">
+                    <div class="selected-character-avatar" style="background-color: ${character.color}">
                         ${characterImageMarkup(character)}
-                    </span>
-                    <span class="selected-char-name">${character.name}</span>
-                </span>
-                ${isMe ? '<i class="fa-solid fa-chevron-right"></i>' : ''}
+                    </div>
+                    <div class="selected-char-name-wrapper">
+                        <span class="selected-char-name">${character.name}</span>
+                        ${isMe ? '<i class="fa-solid fa-rotate" style="font-size: 0.85rem; color: #64748b; margin-left: 4px;"></i>' : ''}
+                    </div>
+                </div>
             </button>
+            ${inputHtml}
         `;
 
         // If it was focused, restore the cursor / value

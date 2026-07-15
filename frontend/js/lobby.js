@@ -31,16 +31,18 @@ function renderPlayerSetupCards(count) {
         card.id = `player-setup-card-${i}`;
         card.innerHTML = `
             <div class="player-card-num">Người chơi ${i + 1}</div>
-            <input type="text" id="player-name-${i}" value="${defaultName}" placeholder="Nhập tên người chơi">
             <button type="button" class="char-pick-btn" id="btn-pick-char-${i}" data-index="${i}" data-character-id="${defaultChar.id}">
-                <span class="selected-info">
-                    <span class="selected-character-avatar" style="background-color: ${defaultChar.color}">
+                <div class="selected-info">
+                    <div class="selected-character-avatar" style="background-color: ${defaultChar.color}">
                         ${characterImageMarkup(defaultChar)}
-                    </span>
-                    <span class="selected-char-name">${defaultChar.name}</span>
-                </span>
-                <i class="fa-solid fa-chevron-right"></i>
+                    </div>
+                    <div class="selected-char-name-wrapper">
+                        <span class="selected-char-name">${defaultChar.name}</span>
+                        <i class="fa-solid fa-rotate" style="font-size: 0.85rem; color: #64748b; margin-left: 4px;"></i>
+                    </div>
+                </div>
             </button>
+            <input type="text" id="player-name-${i}" value="${defaultName}" placeholder="Nhập tên người chơi">
         `;
 
         listContainer.appendChild(card);
