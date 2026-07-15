@@ -104,11 +104,6 @@ function initSignalR() {
             visualDice1.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
             visualDice1.classList.remove("dice-shake");
         }
-        const visualDice2 = document.getElementById("visual-dice-2");
-        if (visualDice2) {
-            visualDice2.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
-            visualDice2.classList.remove("dice-shake");
-        }
         const diceModifiersDesc = document.getElementById("dice-modifiers-desc");
         if (diceModifiersDesc) diceModifiersDesc.innerText = "";
 
@@ -118,21 +113,18 @@ function initSignalR() {
 
     connection.on("DiceRolled", (playerName, rollVal1, rollVal2, totalMove) => {
         const dice1 = document.getElementById("visual-dice-1");
-        const dice2 = document.getElementById("visual-dice-2");
         roll3DDice(dice1, rollVal1);
-        roll3DDice(dice2, rollVal2);
-        document.getElementById("dice-modifiers-desc").innerText = `Đang tung 2 xúc xắc...`;
+        document.getElementById("dice-modifiers-desc").innerText = `Đang tung xúc xắc...`;
         
-        const sumRoll = rollVal1 + rollVal2;
-        const isDouble = (totalMove === sumRoll * 2) && (totalMove !== sumRoll);
+        const isDouble = (totalMove === rollVal1 * 2) && (totalMove !== rollVal1);
 
         setTimeout(() => {
             if (isDouble) {
-                document.getElementById("dice-modifiers-desc").innerText = `Double Dice: (${rollVal1} + ${rollVal2}) x 2 = ${totalMove} ô`;
+                document.getElementById("dice-modifiers-desc").innerText = `Double Dice: ${rollVal1} x 2 = ${totalMove} ô`;
             } else {
-                document.getElementById("dice-modifiers-desc").innerText = `Tổng điểm: ${rollVal1} + ${rollVal2} = ${sumRoll} ô`;
+                document.getElementById("dice-modifiers-desc").innerText = `Di chuyển: ${totalMove} ô`;
             }
-            logMessage(`[${playerName}] xúc xắc được ${rollVal1} + ${rollVal2} = ${sumRoll} (Di chuyển: ${totalMove} ô).`);
+            logMessage(`[${playerName}] xúc xắc được ${rollVal1} (Di chuyển: ${totalMove} ô).`);
         }, 1500);
     });
 

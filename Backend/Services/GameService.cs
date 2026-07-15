@@ -100,16 +100,15 @@ namespace Backend.Services
         public (int rollVal1, int rollVal2, int totalMove) CalculateDiceRoll(Player player)
         {
             int rollVal1 = _random.Next(1, 7); // 1–6
-            int rollVal2 = _random.Next(1, 7); // 1–6
+            int rollVal2 = 0; // Only 1 dice
 
             if (player.DiceModifier > 0)
             {
                 rollVal1 = Math.Min(3, rollVal1);
-                rollVal2 = Math.Min(3, rollVal2);
                 player.DiceModifier--;
             }
 
-            int rollSum = rollVal1 + rollVal2;
+            int rollSum = rollVal1;
             int totalMove = rollSum;
             if (player.DoubleDice)
             {

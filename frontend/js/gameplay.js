@@ -367,16 +367,6 @@ function renderBoard() {
                         <div class="dice-face face-6"><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
                     </div>
                 </div>
-                <div class="dice-box">
-                    <div class="dice-cube" id="visual-dice-2">
-                        <div class="dice-face face-1"><div class="pip"></div></div>
-                        <div class="dice-face face-2"><div class="pip"></div><div class="pip"></div></div>
-                        <div class="dice-face face-3"><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
-                        <div class="dice-face face-4"><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
-                        <div class="dice-face face-5"><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
-                        <div class="dice-face face-6"><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div><div class="pip"></div></div>
-                    </div>
-                </div>
             </div>
             <button id="btn-roll-dice">🎲 Tung Xúc Xắc</button>
             <div id="dice-modifiers-desc" style="color:#fff; font-size:0.95cqi; text-shadow:0 1px 2px rgba(0,0,0,0.5); min-height:1.2cqi;"></div>
@@ -741,11 +731,6 @@ function setupTurn(playerIndex) {
         visualDice1.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
         visualDice1.classList.remove("dice-shake");
     }
-    const visualDice2 = document.getElementById("visual-dice-2");
-    if (visualDice2) {
-        visualDice2.style.transform = "rotateX(0deg) rotateY(0deg) rotateZ(0deg)";
-        visualDice2.classList.remove("dice-shake");
-    }
     
     const diceModifiersDesc = document.getElementById("dice-modifiers-desc");
     if (diceModifiersDesc) diceModifiersDesc.innerText = "";
@@ -788,41 +773,36 @@ function handleRollDice() {
     document.getElementById("btn-roll-dice").disabled = true;
 
     const dice1 = document.getElementById("visual-dice-1");
-    const dice2 = document.getElementById("visual-dice-2");
     
     // Roll calculations
     let rollVal1 = Math.floor(Math.random() * 6) + 1;
-    let rollVal2 = Math.floor(Math.random() * 6) + 1;
     
     if (player.diceModifier > 0) {
         rollVal1 = Math.min(3, rollVal1);
-        rollVal2 = Math.min(3, rollVal2);
         player.diceModifier--;
     }
 
     // Trigger 3D roll animations
     roll3DDice(dice1, rollVal1);
-    roll3DDice(dice2, rollVal2);
-    document.getElementById("dice-modifiers-desc").innerText = `Đang tung 2 xúc xắc...`;
+    document.getElementById("dice-modifiers-desc").innerText = `Đang tung xúc xắc...`;
 
-    let sumRoll = rollVal1 + rollVal2;
-    let totalMove = sumRoll;
+    let totalMove = rollVal1;
     let hadDouble = player.doubleDice;
     
     // Double Dice reward
     if(player.doubleDice) {
-        totalMove = sumRoll * 2;
+        totalMove = rollVal1 * 2;
         player.doubleDice = false;
     }
 
     setTimeout(() => {
         if(hadDouble) {
-            document.getElementById("dice-modifiers-desc").innerText = `Double Dice: (${rollVal1} + ${rollVal2}) x 2 = ${totalMove} ô`;
+            document.getElementById("dice-modifiers-desc").innerText = `Double Dice: ${rollVal1} x 2 = ${totalMove} ô`;
         } else {
-            document.getElementById("dice-modifiers-desc").innerText = `Tổng điểm: ${rollVal1} + ${rollVal2} = ${sumRoll} ô`;
+            document.getElementById("dice-modifiers-desc").innerText = `Di chuyển: ${totalMove} ô`;
         }
 
-        logMessage(`[${player.name}] xúc xắc được ${rollVal1} + ${rollVal2} = ${sumRoll} (Di chuyển: ${totalMove} ô).`);
+        logMessage(`[${player.name}] xúc xắc được ${rollVal1} (Di chuyển: ${totalMove} ô).`);
 
         // Move Player token
         movePlayerSequentially(player, totalMove);
