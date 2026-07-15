@@ -380,7 +380,7 @@
   bottom: 2.5cqi;
   left: 0.8cqi;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 1.1cqi;
   z-index: 100;
 }

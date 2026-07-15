@@ -217,7 +217,7 @@ function initSignalR() {
                 document.getElementById("btn-roll-dice").disabled = false;
                 document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
             }
-        }, 4000);
+        }, 2000);
     });
 
     connection.on("TriggerTrap", (playerName, trapName, trapDetail, newTileIndex, skipTurn) => {
@@ -554,7 +554,7 @@ function initSignalR() {
                 
                 let resultText = document.getElementById("wheel-result-text");
                 resultText.innerHTML = `<span style="color:${isReward ? 'var(--success)' : 'var(--danger)'};">${label}</span><br><small>${desc}</small>`;
-                resultText.style.display = "flex";
+                resultText.style.display = "block";
                 
                 updatePlayerPositionsOnBoard();
                 renderScoreboard();

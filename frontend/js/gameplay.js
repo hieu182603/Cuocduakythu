@@ -1028,7 +1028,7 @@ function triggerQuestionEvent(player) {
             document.getElementById("question-modal").classList.remove("active");
             updatePlayerPositionsOnBoard();
             nextTurn();
-        }, 4000);
+        }, 2000);
     });
 }
 
@@ -1051,7 +1051,7 @@ function handleAnswerSelected(selectedBtn, answerIndex) {
         setTimeout(() => {
             document.getElementById("question-modal").classList.remove("active");
             nextTurn();
-        }, 4000);
+        }, 2000);
     } else {
         selectedBtn.classList.add("incorrect");
         playSFX('fail');
@@ -1086,7 +1086,7 @@ function handleAnswerSelected(selectedBtn, answerIndex) {
             document.getElementById("question-modal").classList.remove("active");
             updatePlayerPositionsOnBoard();
             nextTurn();
-        }, 4000);
+        }, 2000);
     }
 }
 
@@ -1558,7 +1558,7 @@ function applyWheelResult(player, sector) {
     
     let resultText = document.getElementById("wheel-result-text");
     resultText.innerHTML = `<span style="color:${sector.type === 'reward' ? 'var(--success)' : 'var(--danger)'};">${sector.label}</span><br><small>${sector.desc}</small>`;
-    resultText.style.display = "flex";
+    resultText.style.display = "block";
 
     // Apply outcome to state
     if (sector.type === "reward") {
