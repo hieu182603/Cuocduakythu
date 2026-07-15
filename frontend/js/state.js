@@ -14,6 +14,8 @@ let roomCode = "";
 let connection = null;
 let myPlayerId = -1; // -1: spectator, otherwise player index
 let gameTimerInterval = null;
+let isMovementAnimating = false;
+let pendingEvent = null;
 
 let sessionToken = localStorage.getItem("session_token");
 if (!sessionToken) {

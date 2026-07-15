@@ -49,7 +49,6 @@ function showNotification(message, type = "info", duration = 3000) {
 function showConfirm(message, onConfirm) {
     const modal = document.getElementById("custom-confirm-modal");
     if (!modal) {
-        // Fallback to browser confirm if elements not loaded yet
         if (confirm(message)) {
             onConfirm();
         }
@@ -63,28 +62,26 @@ function showConfirm(message, onConfirm) {
     const btnNo = document.getElementById("btn-confirm-no");
     const overlay = document.getElementById("confirm-modal-overlay");
 
-    // Clean up old event listeners using clone replacement
-    const newBtnYes = btnYes.cloneNode(true);
-    const newBtnNo = btnNo.cloneNode(true);
-    const newOverlay = overlay.cloneNode(true);
-
-    btnYes.parentNode.replaceChild(newBtnYes, btnYes);
-    btnNo.parentNode.replaceChild(newBtnNo, btnNo);
-    overlay.parentNode.replaceChild(newOverlay, overlay);
-
     const cleanup = () => {
         modal.classList.remove("active");
     };
 
-    newBtnYes.addEventListener("click", () => {
-        cleanup();
-        onConfirm();
-    });
+    if (btnYes) {
+        btnYes.onclick = () => {
+            cleanup();
+            onConfirm();
+        };
+    }
 
-    const handleCancel = () => {
-        cleanup();
-    };
+    if (btnNo) {
+        btnNo.onclick = () => {
+            cleanup();
+        };
+    }
 
-    newBtnNo.addEventListener("click", handleCancel);
-    newOverlay.addEventListener("click", handleCancel);
+    if (overlay) {
+        overlay.onclick = () => {
+            cleanup();
+        };
+    }
 }

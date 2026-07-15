@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
         .then(() => {
             loadSettings();
             initApp();
+            initStaticEvents();
 
             // Global click sound effect listener
             document.addEventListener("click", (e) => {

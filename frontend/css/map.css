@@ -197,10 +197,10 @@
 /* ================= QUÂN CỜ ================= */
 .token{
   position:absolute;z-index:30;
-  --token-size:3.2cqi;
-  --badge-size:1.4cqi;
-  --badge-font:.85cqi;
-  --badge-border:.14cqi;
+  --token-size:4.2cqi;
+  --badge-size:1.6cqi;
+  --badge-font:.95cqi;
+  --badge-border:.16cqi;
   width:var(--token-size);
   transition:left .22s ease, top .22s ease, width .18s ease;
   pointer-events:none;

@@ -376,31 +376,7 @@ function renderBoard() {
 
     // 3. Gán sự kiện cho các nút điều khiển
     safeAddListener("btn-roll-dice", "click", handleRollDice);
-    safeAddListener("btnExit", "click", () => {
-        showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
-            if (isOnlineMode && connection) {
-                localStorage.removeItem("saved_room_code");
-                window.location.reload();
-            } else {
-                showScreen("menu");
-            }
-        });
-    });
 
-    safeAddListener("btnHelp", "click", () => {
-        const modal = document.getElementById("rulesModal");
-        if (modal) modal.classList.add("show");
-    });
-
-    safeAddListener("rulesClose", "click", () => {
-        const modal = document.getElementById("rulesModal");
-        if (modal) modal.classList.remove("show");
-    });
-
-    safeAddListener("rulesCloseX", "click", () => {
-        const modal = document.getElementById("rulesModal");
-        if (modal) modal.classList.remove("show");
-    });
 
     const soundBtn = document.getElementById("btnSound");
     if (soundBtn) {
@@ -430,33 +406,18 @@ function placeToken(p, tokenEl, racersList) {
     const slot = occupants.indexOf(p);
 
     if (p.tileIndex === 0) {
-        if (!p.startAnchor) {
-            const seedX = Math.abs(Math.sin(p.id + 1));
-            const seedY = Math.abs(Math.sin(p.id + 2));
-            p.startAnchor = {
-                x: 0.12 + seedX * 0.76,
-                y: 0.23 + seedY * 0.38,
-                layer: p.id
-            };
-        }
-        
-        const count = occupants.length;
-        const scale = count > 30 ? 0.26 : count > 15 ? 0.32 : count > 8 ? 0.38 : 0.48;
-        const size = Math.min(tileRect.height * scale, tileRect.width * (scale * 0.52));
-        
+        const size = tileRect.width * 0.35; // Larger size on START
         tokenEl.style.setProperty('--token-size', size + 'px');
-        tokenEl.style.setProperty('--badge-size', Math.max(10, size * 0.42) + 'px');
-        tokenEl.style.setProperty('--badge-font', Math.max(7, size * 0.24) + 'px');
-        tokenEl.style.setProperty('--badge-border', Math.max(1, size * 0.04) + 'px');
+        tokenEl.style.setProperty('--badge-size', Math.max(12, size * 0.42) + 'px');
+        tokenEl.style.setProperty('--badge-font', Math.max(8, size * 0.24) + 'px');
+        tokenEl.style.setProperty('--badge-border', Math.max(1.5, size * 0.04) + 'px');
         
-        const tokenHeight = tokenEl.offsetHeight || size / 0.75;
-        const centerX = Math.max(size * 0.55, Math.min(tileRect.width - size * 0.55, tileRect.width * p.startAnchor.x));
-        const rawTop = tileRect.height * p.startAnchor.y - tokenHeight / 2;
-        const top = Math.max(2, Math.min(tileRect.height - tokenHeight - 2, rawTop));
+        const offset = OFFS[slot % OFFS.length];
+        const spread = size * 0.4;
         
-        tokenEl.style.left = (tileRect.left - boardRect.left + centerX - size / 2) + 'px';
-        tokenEl.style.top = (tileRect.top - boardRect.top + top) + 'px';
-        tokenEl.style.zIndex = String(32 + Math.round(p.startAnchor.y * 20 + p.startAnchor.layer % 4));
+        tokenEl.style.left = (tileRect.left - boardRect.left + tileRect.width / 2 + offset[0] * spread - size / 2) + 'px';
+        tokenEl.style.top = (tileRect.top - boardRect.top + tileRect.height / 2 + offset[1] * spread - size / 2) + 'px';
+        tokenEl.style.zIndex = String(32 + slot);
         return;
     }
 
@@ -818,6 +779,8 @@ function movePlayerSequentially(player, steps) {
     if(speedSetting === "fast") stepDelay = 200;
     if(speedSetting === "instant") stepDelay = 0;
 
+    isMovementAnimating = true;
+
     function doStep() {
         if (currentStep < steps) {
             // Increment tile index
@@ -845,7 +808,71 @@ function movePlayerSequentially(player, steps) {
             setTimeout(doStep, stepDelay);
         } else {
             // Movement completed, activate tile effect
+            isMovementAnimating = false;
             activateTile(player);
+        }
+    }
+
+    doStep();
+}
+
+function movePlayerSequentiallyOnline(playerId, targetTileIndex, lapCompleted) {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return;
+
+    const oldIndex = player.tileIndex;
+    let steps = (targetTileIndex - oldIndex + TILE_COORDS.length) % TILE_COORDS.length;
+
+    if (steps === 0) {
+        player.tileIndex = targetTileIndex;
+        player.lapCount = lapCompleted;
+        updatePlayerPositionsOnBoard();
+        renderScoreboard();
+        isMovementAnimating = false;
+        if (pendingEvent) {
+            pendingEvent();
+            pendingEvent = null;
+        }
+        return;
+    }
+
+    let currentStep = 0;
+    let stepDelay = 400; // milliseconds
+    if(speedSetting === "fast") stepDelay = 200;
+    if(speedSetting === "instant") stepDelay = 0;
+
+    isMovementAnimating = true;
+
+    function doStep() {
+        if (currentStep < steps) {
+            player.tileIndex = (player.tileIndex + 1) % TILE_COORDS.length;
+
+            // Highlight active landing tile
+            document.querySelectorAll(".tile").forEach(t => t.classList.remove("active-landing"));
+            const activeTile = document.getElementById(`tile-${player.tileIndex}`);
+            if (activeTile) activeTile.classList.add("active-landing");
+
+            // Animate local hop
+            updatePlayerPositionsOnBoard();
+            const token = document.getElementById(`player-token-${player.id}`);
+            if (token && speedSetting !== "instant") {
+                token.classList.add("horse-hop");
+                setTimeout(() => token.classList.remove("horse-hop"), 300);
+            }
+
+            currentStep++;
+            setTimeout(doStep, stepDelay);
+        } else {
+            player.tileIndex = targetTileIndex;
+            player.lapCount = lapCompleted;
+            updatePlayerPositionsOnBoard();
+            renderScoreboard();
+
+            isMovementAnimating = false;
+            if (pendingEvent) {
+                pendingEvent();
+                pendingEvent = null;
+            }
         }
     }
 
@@ -1695,4 +1722,32 @@ function logMessage(text, className = "") {
     
     // Scroll logs to bottom
     logs.scrollTop = logs.scrollHeight;
+}
+
+function initStaticEvents() {
+    safeAddListener("btnExit", "click", () => {
+        showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
+            if (isOnlineMode && connection) {
+                localStorage.removeItem("saved_room_code");
+                window.location.reload();
+            } else {
+                showScreen("menu");
+            }
+        });
+    });
+
+    safeAddListener("btnHelp", "click", () => {
+        const modal = document.getElementById("rulesModal");
+        if (modal) modal.classList.add("show");
+    });
+
+    safeAddListener("rulesClose", "click", () => {
+        const modal = document.getElementById("rulesModal");
+        if (modal) modal.classList.remove("show");
+    });
+
+    safeAddListener("rulesCloseX", "click", () => {
+        const modal = document.getElementById("rulesModal");
+        if (modal) modal.classList.remove("show");
+    });
 }

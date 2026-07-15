@@ -130,82 +130,61 @@ function initSignalR() {
 
     connection.on("PlayerMoved", (playerId, targetTileIndex, lapCompleted) => {
         setTimeout(() => {
-            const player = players.find(p => p.id === playerId);
-            if (player) {
-                player.tileIndex = targetTileIndex;
-                player.lapCount = lapCompleted;
-            }
-            updatePlayerPositionsOnBoard();
-            renderScoreboard();
-
-            const token = document.getElementById(`player-token-${playerId}`);
-            if (token && speedSetting !== "instant") {
-                token.classList.add("horse-hop");
-                setTimeout(() => {
-                    token.classList.remove("horse-hop");
-                    if (playerId === myPlayerId) {
-                        const tile = TILE_COORDS[targetTileIndex];
-                        if (tile.type === "start") {
-                            document.getElementById("btn-roll-dice").disabled = false;
-                            document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
-                        }
-                    }
-                }, 300);
-            } else {
-                if (playerId === myPlayerId) {
-                    const tile = TILE_COORDS[targetTileIndex];
-                    if (tile.type === "start") {
-                        document.getElementById("btn-roll-dice").disabled = false;
-                        document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
-                    }
-                }
-            }
+            movePlayerSequentiallyOnline(playerId, targetTileIndex, lapCompleted);
         }, 1500); // 1.5s delay to sync with 3D dice roll animation
     });
 
     connection.on("TriggerQuestion", (playerName, questionText, answersList, wrongStreak) => {
-        currentQuestion = { question: questionText, answers: answersList, correct: -1 };
-        
-        const modal = document.getElementById("question-modal");
-        document.getElementById("question-text").innerText = questionText;
-        
-        const streakWarn = document.getElementById("wrong-streak-warning");
-        if (wrongStreak > 0) {
-            streakWarn.innerText = `⚠️ CHUỖI SAI: ${wrongStreak} lần!`;
-            streakWarn.style.display = "block";
-        } else {
-            streakWarn.style.display = "none";
-        }
-
-        const answersGrid = document.getElementById("answers-grid");
-        answersGrid.innerHTML = "";
-
-        const isActive = myPlayerId !== -1;
-
-        answersList.forEach((ans, idx) => {
-            const btn = document.createElement("button");
-            btn.className = "answer-btn";
-            btn.innerHTML = `${String.fromCharCode(65 + idx)}. ${ans}`;
+        const triggerFn = () => {
+            currentQuestion = { question: questionText, answers: answersList, correct: -1 };
             
-            if (isActive) {
-                btn.addEventListener("click", () => {
-                    stopQuestionTimer();
-                    connection.invoke("SubmitAnswer", roomCode, idx);
-                });
+            const modal = document.getElementById("question-modal");
+            document.getElementById("question-text").innerText = questionText;
+            
+            const streakWarn = document.getElementById("wrong-streak-warning");
+            if (wrongStreak > 0) {
+                streakWarn.innerText = `⚠️ CHUỖI SAI: ${wrongStreak} lần!`;
+                streakWarn.style.display = "block";
             } else {
-                btn.disabled = true;
-                btn.style.cursor = "not-allowed";
+                streakWarn.style.display = "none";
             }
-            answersGrid.appendChild(btn);
-        });
 
-        modal.classList.add("active");
+            const answersGrid = document.getElementById("answers-grid");
+            answersGrid.innerHTML = "";
 
-        startQuestionTimer(30, () => {
-            if (isActive) {
-                connection.invoke("SubmitAnswer", roomCode, -1);
-            }
-        });
+            const isActive = myPlayerId !== -1;
+
+            answersList.forEach((ans, idx) => {
+                const btn = document.createElement("button");
+                btn.className = "answer-btn";
+                btn.innerHTML = `${String.fromCharCode(65 + idx)}. ${ans}`;
+                
+                if (isActive) {
+                    btn.addEventListener("click", () => {
+                        stopQuestionTimer();
+                        connection.invoke("SubmitAnswer", roomCode, idx);
+                    });
+                } else {
+                    btn.disabled = true;
+                    btn.style.cursor = "not-allowed";
+                }
+                answersGrid.appendChild(btn);
+            });
+
+            modal.classList.add("active");
+
+            startQuestionTimer(30, () => {
+                if (isActive) {
+                    connection.invoke("SubmitAnswer", roomCode, -1);
+                }
+            });
+        };
+
+        if (isMovementAnimating) {
+            pendingEvent = triggerFn;
+        } else {
+            triggerFn();
+        }
     });
 
     connection.on("AnswerOutcome", (playerName, isCorrect, correctIndex, wrongStreak, penaltyText) => {
@@ -242,221 +221,237 @@ function initSignalR() {
     });
 
     connection.on("TriggerTrap", (playerName, trapName, trapDetail, newTileIndex, skipTurn) => {
-        const player = players.find(p => p.name === playerName);
-        const modal = document.getElementById("trap-modal");
-        const cardsContainer = document.getElementById("trap-cards-container");
-        const closeBtn = document.getElementById("btn-close-trap-modal");
-        const isActive = myPlayerId !== -1;
-        const eventTileIndex = player ? player.tileIndex : -1;
+        const triggerFn = () => {
+            const player = players.find(p => p.name === playerName);
+            const modal = document.getElementById("trap-modal");
+            const cardsContainer = document.getElementById("trap-cards-container");
+            const closeBtn = document.getElementById("btn-close-trap-modal");
+            const isActive = myPlayerId !== -1;
+            const eventTileIndex = player ? player.tileIndex : -1;
 
-        // Reset elements
-        document.getElementById("trap-result-box").style.display = "none";
-        closeBtn.style.display = "none";
-        cardsContainer.style.display = "flex";
-        cardsContainer.innerHTML = "";
-
-        if (isActive) {
-            document.getElementById("trap-modal-desc").innerText = "Ôi không! Bạn đã dẫm phải bẫy hiểm họa. Hãy chọn 1 lá bài!";
-        } else {
-            document.getElementById("trap-modal-desc").innerText = `[${playerName}] đã dẫm phải bẫy hiểm họa và đang chọn bài...`;
-        }
-
-        // We need 2 alternative traps for display
-        let alternatives = TRAP_LIST.filter(t => t.name !== trapName);
-        alternatives.sort(() => Math.random() - 0.5);
-        let cardChoices = [{ name: trapName, detail: trapDetail }, alternatives[0], alternatives[1]];
-        cardChoices.sort(() => Math.random() - 0.5);
-
-        let hasSelected = false;
-
-        cardChoices.forEach((choice, index) => {
-            const card = document.createElement("div");
-            card.className = "event-card";
-            card.innerHTML = `
-                <div class="card-back">
-                    <i class="fa-solid fa-skull-crossbones"></i>
-                    <span>Bẫy ${index + 1}</span>
-                </div>
-                <div class="card-front">
-                    <div class="card-front-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                    <div class="effect-name">${choice.name}</div>
-                    <div class="effect-detail">${choice.detail}</div>
-                </div>
-            `;
+            // Reset elements
+            document.getElementById("trap-result-box").style.display = "none";
+            closeBtn.style.display = "none";
+            cardsContainer.style.display = "flex";
+            cardsContainer.innerHTML = "";
 
             if (isActive) {
-                card.addEventListener("click", () => {
-                    if (hasSelected) return;
-                    hasSelected = true;
-                    playSFX('fail');
-
-                    // Flip and reveal
-                    const cardInnerElements = cardsContainer.querySelectorAll(".event-card");
-                    cardInnerElements.forEach((c, idx) => {
-                        c.classList.add("disabled");
-                        const frontName = c.querySelector(".effect-name");
-                        const frontDetail = c.querySelector(".effect-detail");
-                        if (idx === index) {
-                            frontName.innerText = trapName;
-                            frontDetail.innerText = trapDetail;
-                            c.classList.add("flipped");
-                        } else {
-                            let altIdx = idx < index ? idx : idx - 1;
-                            frontName.innerText = alternatives[altIdx].name;
-                            frontDetail.innerText = alternatives[altIdx].detail;
-                            c.classList.add("flipped");
-                            c.classList.add("faded");
-                        }
-                    });
-
-                    // Apply and log
-                    if (player) {
-                        player.tileIndex = newTileIndex;
-                        player.skipTurn = skipTurn;
-                    }
-                    updatePlayerPositionsOnBoard();
-                    renderScoreboard();
-                    logMessage(`[${playerName}] kích hoạt bẫy: ${trapName} - ${trapDetail}`, "log-trap");
-
-                    setTimeout(() => {
-                        document.getElementById("trap-modal-desc").innerText = "Chi tiết bẫy kích hoạt:";
-                        document.getElementById("trap-result-box").style.display = "block";
-                        document.getElementById("trap-result-box").innerHTML = `
-                            <div class="effect-name">${trapName}</div>
-                            <div class="effect-detail">${trapDetail}</div>
-                        `;
-                        closeBtn.style.display = "inline-flex";
-                        closeBtn.onclick = () => {
-                            modal.classList.remove("active");
-                            if (myPlayerId !== -1) {
-                                const tile = TILE_COORDS[player.tileIndex];
-                                // Only process new tile landing if they actually moved to a different non-start tile
-                                if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
-                                    connection.invoke("ProcessNewTileLanding", roomCode);
-                                } else {
-                                    document.getElementById("btn-roll-dice").disabled = false;
-                                    document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
-                                }
-                            }
-                        };
-                    }, 800);
-                });
+                document.getElementById("trap-modal-desc").innerText = "Ôi không! Bạn đã dẫm phải bẫy hiểm họa. Hãy chọn 1 lá bài!";
+            } else {
+                document.getElementById("trap-modal-desc").innerText = `[${playerName}] đã dẫm phải bẫy hiểm họa và đang chọn bài...`;
             }
 
-            cardsContainer.appendChild(card);
-        });
+            // We need 2 alternative traps for display
+            let alternatives = TRAP_LIST.filter(t => t.name !== trapName);
+            alternatives.sort(() => Math.random() - 0.5);
+            let cardChoices = [{ name: trapName, detail: trapDetail }, alternatives[0], alternatives[1]];
+            cardChoices.sort(() => Math.random() - 0.5);
 
-        modal.classList.add("active");
+            let hasSelected = false;
+
+            cardChoices.forEach((choice, index) => {
+                const card = document.createElement("div");
+                card.className = "event-card";
+                card.innerHTML = `
+                    <div class="card-back">
+                        <i class="fa-solid fa-skull-crossbones"></i>
+                        <span>Bẫy ${index + 1}</span>
+                    </div>
+                    <div class="card-front">
+                        <div class="card-front-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="effect-name">${choice.name}</div>
+                        <div class="effect-detail">${choice.detail}</div>
+                    </div>
+                `;
+
+                if (isActive) {
+                    card.addEventListener("click", () => {
+                        if (hasSelected) return;
+                        hasSelected = true;
+                        playSFX('fail');
+
+                        // Flip and reveal
+                        const cardInnerElements = cardsContainer.querySelectorAll(".event-card");
+                        cardInnerElements.forEach((c, idx) => {
+                            c.classList.add("disabled");
+                            const frontName = c.querySelector(".effect-name");
+                            const frontDetail = c.querySelector(".effect-detail");
+                            if (idx === index) {
+                                frontName.innerText = trapName;
+                                frontDetail.innerText = trapDetail;
+                                c.classList.add("flipped");
+                            } else {
+                                let altIdx = idx < index ? idx : idx - 1;
+                                frontName.innerText = alternatives[altIdx].name;
+                                frontDetail.innerText = alternatives[altIdx].detail;
+                                c.classList.add("flipped");
+                                c.classList.add("faded");
+                            }
+                        });
+
+                        // Apply and log
+                        if (player) {
+                            player.tileIndex = newTileIndex;
+                            player.skipTurn = skipTurn;
+                        }
+                        updatePlayerPositionsOnBoard();
+                        renderScoreboard();
+                        logMessage(`[${playerName}] kích hoạt bẫy: ${trapName} - ${trapDetail}`, "log-trap");
+
+                        setTimeout(() => {
+                            document.getElementById("trap-modal-desc").innerText = "Chi tiết bẫy kích hoạt:";
+                            document.getElementById("trap-result-box").style.display = "block";
+                            document.getElementById("trap-result-box").innerHTML = `
+                                <div class="effect-name">${trapName}</div>
+                                <div class="effect-detail">${trapDetail}</div>
+                            `;
+                            closeBtn.style.display = "inline-flex";
+                            closeBtn.onclick = () => {
+                                modal.classList.remove("active");
+                                if (myPlayerId !== -1) {
+                                    const tile = TILE_COORDS[player.tileIndex];
+                                    // Only process new tile landing if they actually moved to a different non-start tile
+                                    if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
+                                        connection.invoke("ProcessNewTileLanding", roomCode);
+                                    } else {
+                                        document.getElementById("btn-roll-dice").disabled = false;
+                                        document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
+                                    }
+                                }
+                            };
+                        }, 800);
+                    });
+                }
+
+                cardsContainer.appendChild(card);
+            });
+
+            modal.classList.add("active");
+        };
+
+        if (isMovementAnimating) {
+            pendingEvent = triggerFn;
+        } else {
+            triggerFn();
+        }
     });
 
     connection.on("TriggerReward", (playerName, rewardName, rewardDetail, newTileIndex, shield, doubleDice, isExtraTurn) => {
-        const player = players.find(p => p.name === playerName);
-        const modal = document.getElementById("reward-modal");
-        const cardsContainer = document.getElementById("reward-cards-container");
-        const closeBtn = document.getElementById("btn-close-reward-modal");
-        const isActive = myPlayerId !== -1;
-        const eventTileIndex = player ? player.tileIndex : -1;
+        const triggerFn = () => {
+            const player = players.find(p => p.name === playerName);
+            const modal = document.getElementById("reward-modal");
+            const cardsContainer = document.getElementById("reward-cards-container");
+            const closeBtn = document.getElementById("btn-close-reward-modal");
+            const isActive = myPlayerId !== -1;
+            const eventTileIndex = player ? player.tileIndex : -1;
 
-        // Reset elements
-        document.getElementById("reward-result-box").style.display = "none";
-        closeBtn.style.display = "none";
-        cardsContainer.style.display = "flex";
-        cardsContainer.innerHTML = "";
-
-        if (isActive) {
-            document.getElementById("reward-modal-desc").innerText = "Tuyệt vời! Bạn nhận được một phần quà may mắn. Hãy chọn 1 lá bài!";
-        } else {
-            document.getElementById("reward-modal-desc").innerText = `[${playerName}] nhận được phần quà may mắn và đang chọn bài...`;
-        }
-
-        // We need 2 alternative rewards for display
-        let alternatives = REWARD_LIST.filter(r => r.name !== rewardName);
-        alternatives.sort(() => Math.random() - 0.5);
-        let cardChoices = [{ name: rewardName, detail: rewardDetail }, alternatives[0], alternatives[1]];
-        cardChoices.sort(() => Math.random() - 0.5);
-
-        let hasSelected = false;
-
-        cardChoices.forEach((choice, index) => {
-            const card = document.createElement("div");
-            card.className = "event-card";
-            card.innerHTML = `
-                <div class="card-back">
-                    <i class="fa-solid fa-gift"></i>
-                    <span>Thưởng ${index + 1}</span>
-                </div>
-                <div class="card-front">
-                    <div class="card-front-icon"><i class="fa-solid fa-circle-check"></i></div>
-                    <div class="effect-name">${choice.name}</div>
-                    <div class="effect-detail">${choice.detail}</div>
-                </div>
-            `;
+            // Reset elements
+            document.getElementById("reward-result-box").style.display = "none";
+            closeBtn.style.display = "none";
+            cardsContainer.style.display = "flex";
+            cardsContainer.innerHTML = "";
 
             if (isActive) {
-                card.addEventListener("click", () => {
-                    if (hasSelected) return;
-                    hasSelected = true;
-                    playSFX('success');
-
-                    // Flip and reveal
-                    const cardInnerElements = cardsContainer.querySelectorAll(".event-card");
-                    cardInnerElements.forEach((c, idx) => {
-                        c.classList.add("disabled");
-                        const frontName = c.querySelector(".effect-name");
-                        const frontDetail = c.querySelector(".effect-detail");
-                        if (idx === index) {
-                            frontName.innerText = rewardName;
-                            frontDetail.innerText = rewardDetail;
-                            c.classList.add("flipped");
-                        } else {
-                            let altIdx = idx < index ? idx : idx - 1;
-                            frontName.innerText = alternatives[altIdx].name;
-                            frontDetail.innerText = alternatives[altIdx].detail;
-                            c.classList.add("flipped");
-                            c.classList.add("faded");
-                        }
-                    });
-
-                    // Apply and log
-                    if (player) {
-                        player.tileIndex = newTileIndex;
-                        player.shield = shield;
-                        player.doubleDice = doubleDice;
-                        player.isExtraTurn = isExtraTurn;
-                    }
-                    updatePlayerPositionsOnBoard();
-                    renderScoreboard();
-                    logMessage(`[${playerName}] kích hoạt thưởng: ${rewardName} - ${rewardDetail}`, "log-reward");
-
-                    setTimeout(() => {
-                        document.getElementById("reward-modal-desc").innerText = "Chi tiết phần thưởng:";
-                        document.getElementById("reward-result-box").style.display = "block";
-                        document.getElementById("reward-result-box").innerHTML = `
-                            <div class="effect-name">${rewardName}</div>
-                            <div class="effect-detail">${rewardDetail}</div>
-                        `;
-                        closeBtn.style.display = "inline-flex";
-                        closeBtn.onclick = () => {
-                            modal.classList.remove("active");
-                            if (myPlayerId !== -1) {
-                                const tile = TILE_COORDS[player.tileIndex];
-                                // Only process new tile landing if they actually moved to a different non-start tile
-                                if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
-                                    connection.invoke("ProcessNewTileLanding", roomCode);
-                                } else {
-                                    document.getElementById("btn-roll-dice").disabled = false;
-                                    document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
-                                }
-                            }
-                        };
-                    }, 800);
-                });
+                document.getElementById("reward-modal-desc").innerText = "Tuyệt vời! Bạn nhận được một phần quà may mắn. Hãy chọn 1 lá bài!";
+            } else {
+                document.getElementById("reward-modal-desc").innerText = `[${playerName}] nhận được phần quà may mắn và đang chọn bài...`;
             }
 
-            cardsContainer.appendChild(card);
-        });
+            // We need 2 alternative rewards for display
+            let alternatives = REWARD_LIST.filter(r => r.name !== rewardName);
+            alternatives.sort(() => Math.random() - 0.5);
+            let cardChoices = [{ name: rewardName, detail: rewardDetail }, alternatives[0], alternatives[1]];
+            cardChoices.sort(() => Math.random() - 0.5);
 
-        modal.classList.add("active");
+            let hasSelected = false;
+
+            cardChoices.forEach((choice, index) => {
+                const card = document.createElement("div");
+                card.className = "event-card";
+                card.innerHTML = `
+                    <div class="card-back">
+                        <i class="fa-solid fa-gift"></i>
+                        <span>Thưởng ${index + 1}</span>
+                    </div>
+                    <div class="card-front">
+                        <div class="card-front-icon"><i class="fa-solid fa-circle-check"></i></div>
+                        <div class="effect-name">${choice.name}</div>
+                        <div class="effect-detail">${choice.detail}</div>
+                    </div>
+                `;
+
+                if (isActive) {
+                    card.addEventListener("click", () => {
+                        if (hasSelected) return;
+                        hasSelected = true;
+                        playSFX('success');
+
+                        // Flip and reveal
+                        const cardInnerElements = cardsContainer.querySelectorAll(".event-card");
+                        cardInnerElements.forEach((c, idx) => {
+                            c.classList.add("disabled");
+                            const frontName = c.querySelector(".effect-name");
+                            const frontDetail = c.querySelector(".effect-detail");
+                            if (idx === index) {
+                                frontName.innerText = rewardName;
+                                frontDetail.innerText = rewardDetail;
+                                c.classList.add("flipped");
+                            } else {
+                                let altIdx = idx < index ? idx : idx - 1;
+                                frontName.innerText = alternatives[altIdx].name;
+                                frontDetail.innerText = alternatives[altIdx].detail;
+                                c.classList.add("flipped");
+                                c.classList.add("faded");
+                            }
+                        });
+
+                        // Apply and log
+                        if (player) {
+                            player.tileIndex = newTileIndex;
+                            player.shield = shield;
+                            player.doubleDice = doubleDice;
+                            player.isExtraTurn = isExtraTurn;
+                        }
+                        updatePlayerPositionsOnBoard();
+                        renderScoreboard();
+                        logMessage(`[${playerName}] kích hoạt thưởng: ${rewardName} - ${rewardDetail}`, "log-reward");
+
+                        setTimeout(() => {
+                            document.getElementById("reward-modal-desc").innerText = "Chi tiết phần thưởng:";
+                            document.getElementById("reward-result-box").style.display = "block";
+                            document.getElementById("reward-result-box").innerHTML = `
+                                <div class="effect-name">${rewardName}</div>
+                                <div class="effect-detail">${rewardDetail}</div>
+                            `;
+                            closeBtn.style.display = "inline-flex";
+                            closeBtn.onclick = () => {
+                                modal.classList.remove("active");
+                                if (myPlayerId !== -1) {
+                                    const tile = TILE_COORDS[player.tileIndex];
+                                    // Only process new tile landing if they actually moved to a different non-start tile
+                                    if (player.tileIndex !== eventTileIndex && tile.type !== "start") {
+                                        connection.invoke("ProcessNewTileLanding", roomCode);
+                                    } else {
+                                        document.getElementById("btn-roll-dice").disabled = false;
+                                        document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
+                                    }
+                                }
+                            };
+                        }, 800);
+                    });
+                }
+
+                cardsContainer.appendChild(card);
+            });
+
+            modal.classList.add("active");
+        };
+
+        if (isMovementAnimating) {
+            pendingEvent = triggerFn;
+        } else {
+            triggerFn();
+        }
     });
 
     connection.on("TriggerShieldBlock", (playerName) => {
@@ -490,21 +485,29 @@ function initSignalR() {
     });
 
     connection.on("TriggerWheel", (playerName) => {
-        const modal = document.getElementById("wheel-modal");
-        document.getElementById("wheel-result-text").style.display = "none";
-        document.getElementById("btn-spin-wheel").style.display = "none";
-        document.getElementById("btn-close-wheel-modal").style.display = "none";
-        
-        drawWheel(0);
-        modal.classList.add("active");
+        const triggerFn = () => {
+            const modal = document.getElementById("wheel-modal");
+            document.getElementById("wheel-result-text").style.display = "none";
+            document.getElementById("btn-spin-wheel").style.display = "none";
+            document.getElementById("btn-close-wheel-modal").style.display = "none";
+            
+            drawWheel(0);
+            modal.classList.add("active");
 
-        const isActive = myPlayerId !== -1;
-        if (isActive) {
-            document.getElementById("btn-spin-wheel").style.display = "inline-flex";
-            document.getElementById("btn-spin-wheel").disabled = false;
-            document.getElementById("btn-spin-wheel").onclick = () => {
-                connection.invoke("SpinWheel", roomCode);
-            };
+            const isActive = myPlayerId !== -1;
+            if (isActive) {
+                document.getElementById("btn-spin-wheel").style.display = "inline-flex";
+                document.getElementById("btn-spin-wheel").disabled = false;
+                document.getElementById("btn-spin-wheel").onclick = () => {
+                    connection.invoke("SpinWheel", roomCode);
+                };
+            }
+        };
+
+        if (isMovementAnimating) {
+            pendingEvent = triggerFn;
+        } else {
+            triggerFn();
         }
     });
 
