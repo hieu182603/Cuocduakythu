@@ -102,7 +102,20 @@ function initApp() {
 
     safeAddListener("btn-join-room", "click", () => {
         const modal = document.getElementById("join-room-modal");
-        if (modal) modal.classList.add("active");
+        if (modal) {
+            modal.classList.add("active");
+            
+            // Prefill name from local storage or default
+            let savedName = "";
+            try {
+                const storedNames = JSON.parse(localStorage.getItem("last_player_names") || "[]");
+                if (storedNames.length > 0) savedName = storedNames[0];
+            } catch(e) {}
+            if (!savedName) savedName = "Người chơi " + Math.floor(Math.random() * 900 + 100);
+            
+            const joinPlayerInput = document.getElementById("join-player-name");
+            if (joinPlayerInput) joinPlayerInput.value = savedName;
+        }
     });
 
     safeAddListener("btn-cancel-join", "click", () => {
@@ -123,12 +136,14 @@ function initApp() {
             return;
         }
         
-        const playerNameInput = document.getElementById("player-name-0");
-        const playerName = playerNameInput ? playerNameInput.value.trim() : "Người chơi";
+        const joinPlayerNameInput = document.getElementById("join-player-name");
+        const playerName = joinPlayerNameInput ? joinPlayerNameInput.value.trim() : "";
+        if (!playerName) {
+            showNotification("Vui lòng nhập tên của bạn.", "error");
+            return;
+        }
         
-        const charBtn = document.getElementById("btn-pick-char-0");
-        const charName = charBtn ? charBtn.querySelector(".selected-char-name").innerText : "Bạch Mã";
-        const character = CHARACTER_DATABASE.find(c => c.name === charName) || CHARACTER_DATABASE[1];
+        const character = CHARACTER_DATABASE[Math.floor(Math.random() * CHARACTER_DATABASE.length)];
 
         connection.invoke("JoinRoom", code, playerName, character.id, sessionToken)
             .then(() => {
@@ -138,6 +153,14 @@ function initApp() {
                 roomCode = code;
                 localStorage.setItem("saved_room_code", code);
                 
+                // Save name to last player names local storage for convenience
+                try {
+                    let storedNames = JSON.parse(localStorage.getItem("last_player_names") || "[]");
+                    storedNames = storedNames.filter(n => n !== playerName);
+                    storedNames.unshift(playerName);
+                    localStorage.setItem("last_player_names", JSON.stringify(storedNames.slice(0, 10)));
+                } catch(e) {}
+
                 const roomDisplay = document.getElementById("lobby-room-code-display");
                 if (roomDisplay) roomDisplay.innerText = code;
                 const onlinePanel = document.getElementById("lobby-online-panel");
@@ -155,7 +178,10 @@ function initApp() {
                 
                 showScreen("lobby");
             })
-            .catch(err => console.error("Error joining room: ", err));
+            .catch(err => {
+                console.error("Error joining room: ", err);
+                showNotification(err.message || "Không thể tham gia phòng. Vui lòng kiểm tra lại mã phòng.", "error");
+            });
     });
 
     safeAddListener("btn-question-pool", "click", () => {

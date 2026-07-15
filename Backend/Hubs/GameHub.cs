@@ -71,8 +71,7 @@ namespace Backend.Hubs
 
             if (room == null)
             {
-                await Clients.Caller.SendAsync("Error", "Phòng không tồn tại.");
-                return;
+                throw new HubException("Phòng không tồn tại.");
             }
 
             // Check if player is rejoining an existing room (even if started)
@@ -129,13 +128,11 @@ namespace Backend.Hubs
 
             if (room.IsStarted)
             {
-                await Clients.Caller.SendAsync("Error", "Trận đấu đã bắt đầu.");
-                return;
+                throw new HubException("Trận đấu đã bắt đầu.");
             }
             if (room.Players.Count >= 50)
             {
-                await Clients.Caller.SendAsync("Error", "Phòng đã đầy.");
-                return;
+                throw new HubException("Phòng đã đầy.");
             }
             var newPlayer = new Player
             {

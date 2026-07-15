@@ -19,24 +19,45 @@ function initSignalR() {
         .withAutomaticReconnect()
         .build();
 
+    connection.on("Error", (message) => {
+        showNotification(message, "error");
+    });
+
     connection.on("RoomCreated", (code, playersList) => {
         isOnlineMode = true;
-        isHost = true;
         roomCode = code;
-        myPlayerId = 0; // Host is 0
         localStorage.setItem("saved_room_code", code);
         document.getElementById("lobby-room-code-display").innerText = code;
         document.getElementById("lobby-online-panel").style.display = "block";
         document.getElementById("lobby-setup-panel").style.display = "none";
-        document.getElementById("btn-start-game").style.display = "inline-flex";
-        document.getElementById("lobby-waiting-msg").style.display = "none";
         
-        // Show host controls (gear settings button)
-        document.getElementById("host-only-controls").style.display = "inline-flex";
+        // Determine host status dynamically
+        const me = playersList.find(p => p.connectionId === connection.connectionId);
+        isHost = me ? me.isHost : false;
+        
+        if (me) {
+            myPlayerId = me.isSpectator ? -1 : me.id;
+        } else {
+            myPlayerId = 0;
+        }
+
+        const startBtn = document.getElementById("btn-start-game");
+        const waitMsg = document.getElementById("lobby-waiting-msg");
+        const hostCtrl = document.getElementById("host-only-controls");
+
+        if (isHost) {
+            if (startBtn) startBtn.style.display = "inline-flex";
+            if (waitMsg) waitMsg.style.display = "none";
+            if (hostCtrl) hostCtrl.style.display = "inline-flex";
+        } else {
+            if (startBtn) startBtn.style.display = "none";
+            if (waitMsg) waitMsg.style.display = "block";
+            if (hostCtrl) hostCtrl.style.display = "none";
+        }
         
         syncLobbyPlayers(playersList);
         showScreen("lobby");
-        console.log("Created Room: " + code);
+        console.log("Joined Room: " + code + ", isHost: " + isHost);
     });
 
     connection.on("PlayerJoined", (playersList) => {
