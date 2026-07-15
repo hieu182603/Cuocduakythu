@@ -406,6 +406,11 @@ function renderBoard() {
         if (modal) modal.classList.remove("show");
     });
 
+    safeAddListener("rulesCloseX", "click", () => {
+        const modal = document.getElementById("rulesModal");
+        if (modal) modal.classList.remove("show");
+    });
+
     const soundBtn = document.getElementById("btnSound");
     if (soundBtn) {
         updateGameplaySoundButton();
