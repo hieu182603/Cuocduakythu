@@ -1,0 +1,36 @@
+<section id="main-menu-screen" class="screen">
+    <div class="menu-background"></div>
+    <div class="menu-content">
+        <div class="logo-small">
+            <h1>CUỘC ĐUA KỲ THÚ</h1>
+            <p>Party Board Game & Quiz</p>
+        </div>
+        <div class="menu-buttons">
+            <button id="btn-create-room" class="btn btn-success">
+                <i class="fa-solid fa-circle-plus"></i> Tạo Phòng
+            </button>
+            <button id="btn-join-room" class="btn btn-info">
+                <i class="fa-solid fa-right-to-bracket"></i> Gia Nhập Phòng
+            </button>
+            <button id="btn-settings" class="btn btn-secondary btn-sm">
+                <i class="fa-solid fa-gear"></i> Cài đặt game
+            </button>
+        </div>
+    </div>
+
+    <!-- Join Room Modal Popup -->
+    <div id="join-room-modal" class="game-modal">
+        <div class="modal-overlay"></div>
+        <div class="modal-card join-modal-card">
+            <h2 class="modal-title">Tham Gia Phòng</h2>
+            <p class="modal-subtitle">Nhập mã phòng để tham gia cùng bạn bè</p>
+            <input type="text" id="join-room-code" class="join-room-input" placeholder="NHẬP MÃ PHÒNG" maxlength="5">
+            <div class="modal-actions">
+                <button id="btn-submit-join" class="btn btn-success">
+                    <i class="fa-solid fa-right-to-bracket"></i> Tham Gia
+                </button>
+                <button id="btn-cancel-join" class="btn btn-secondary btn-sm">Hủy</button>
+            </div>
+        </div>
+    </div>
+</section>

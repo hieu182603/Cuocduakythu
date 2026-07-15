@@ -1,0 +1,140 @@
+<section id="gameplay-screen" class="screen">
+  <div class="sidebar-ctrl">
+    <!-- Nút thoát game -->
+    <button id="btnExit" class="ctrl-btn" title="Thoát trò chơi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+        <polyline points="16 17 21 12 16 7"></polyline>
+        <line x1="21" y1="12" x2="9" y2="12"></line>
+      </svg>
+    </button>
+    <!-- Nút âm thanh -->
+    <button id="btnSound" class="ctrl-btn" title="Bật/Tắt âm thanh">
+      <i class="fa-solid fa-volume-high"></i>
+    </button>
+    <!-- Nút luật chơi -->
+    <button id="btnHelp" class="ctrl-btn" title="Xem luật chơi">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:52%;height:52%;overflow:visible">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    </button>
+  </div>
+
+  <div class="gameplay-layout">
+    <!-- SIDEBAR -->
+    <div class="gameplay-sidebar">
+      <!-- 1. Bảng xếp hạng -->
+      <div class="sidebar-header">
+        <h3>Bảng xếp hạng</h3>
+      </div>
+      <div id="scoreboard-list" class="scoreboard-list">
+        <!-- Được vẽ động qua JS renderScoreboard() -->
+      </div>
+    </div>
+
+    <!-- BÀN CỜ 40 Ô -->
+    <div id="board">
+      <!-- Scene và các ô sẽ được sinh động bằng JS -->
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <!-- A. HỘP THOẠI CÂU HỎI (Question Modal) -->
+  <div id="question-modal" class="game-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="game-modal-card" style="max-width:min(92vw,680px)">
+      <h2>❓ Ô CÂU HỎI</h2>
+      <div id="questionPlayer" class="event-player"></div>
+      
+      <!-- Wrong streak warning -->
+      <div class="wrong-streak-warning" id="wrong-streak-warning" style="display: none; color: #d32f2f; font-weight: 800; margin-bottom: 8px;"></div>
+      
+      <div style="display:flex;align-items:center;gap:8px;justify-content:center;margin-bottom:10px">
+        <span style="font-size:22px">⏱️</span>
+        <span id="question-timer-text" style="font-weight:800;font-size:20px;color:#e74c3c">30s</span>
+        <div style="flex:1;height:8px;background:#e0d6c8;border-radius:5px;overflow:hidden;max-width:200px">
+          <div id="question-timer-bar" class="timer-progress-fill" style="width: 100%;"></div>
+        </div>
+      </div>
+      <p class="event-copy" id="question-text">Câu hỏi đang tải...</p>
+      <div id="answers-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0"></div>
+      <p id="questionFeedback" class="event-feedback"></p>
+    </div>
+  </div>
+
+  <!-- B. HỘP THOẠI BẪY (Trap Modal) -->
+  <div id="trap-modal" class="game-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="game-modal-card">
+      <h2 id="trapTitle">⚠️ Ô BẪY!</h2>
+      <div id="trapPlayer" class="event-player"></div>
+      <p class="event-copy" id="trap-modal-desc">Ôi không! Bạn đã dẫm phải bẫy hiểm họa trên đường đua. Hãy chọn 1 lá bài!</p>
+      <div id="trap-cards-container" class="cards-container"></div>
+      <div class="trap-result-box" id="trap-result-box" style="display: none; margin-top: 10px; font-weight: 800; color: #a44412;"></div>
+      <button id="btn-close-trap-modal" class="event-button" type="button" style="display: none;">Chấp nhận hình phạt</button>
+    </div>
+  </div>
+
+  <!-- C. HỘP THOẠI PHẦN THƯỞNG (Reward Modal) -->
+  <div id="reward-modal" class="game-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="game-modal-card">
+      <h2 id="rewardTitle">🎁 Ô THƯỞNG!</h2>
+      <div id="rewardPlayer" class="event-player"></div>
+      <p class="event-copy" id="reward-modal-desc">Tuyệt vời! Bạn nhận được một phần quà may mắn. Hãy chọn 1 lá bài!</p>
+      <div id="reward-cards-container" class="cards-container"></div>
+      <div class="reward-result-box" id="reward-result-box" style="display: none; margin-top: 10px; font-weight: 800; color: #2e7d32;"></div>
+      <button id="btn-close-reward-modal" class="event-button" type="button" style="display: none;">Nhận quà</button>
+    </div>
+  </div>
+
+  <!-- D. HỘP THOẠI VÒNG QUAY (Wheel Modal) -->
+  <div id="wheel-modal" class="game-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="game-modal-card" style="max-width:min(92vw,560px)">
+      <h2>🎡 VÒNG QUAY KỲ BÍ</h2>
+      <div id="wheelPlayer" class="event-player"></div>
+      <p class="event-copy">Hãy xoay vòng quay để xác định vận mệnh!</p>
+      <div style="position:relative;width:280px;height:280px;margin:12px auto">
+        <div style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:32px;z-index:2">▼</div>
+        <canvas id="wheel-canvas" width="280" height="280" style="border-radius:50%;box-shadow:0 4px 18px rgba(0,0,0,.3)"></canvas>
+      </div>
+      <button id="btn-spin-wheel" class="event-button" type="button" style="margin-top:8px">Xoay Vòng Quay!</button>
+      <p id="wheel-result-text" class="event-feedback"></p>
+      <button id="btn-close-wheel-modal" class="event-button" type="button" style="display: none;">Tiếp tục</button>
+    </div>
+  </div>
+
+  <!-- E. HỘP THOẠI LUẬT CHƠI (Rules Modal) -->
+  <div id="rulesModal" class="game-modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="game-modal-card" style="text-align: left; max-width: min(92vw, 620px);">
+      <h2 style="text-align: center; color: #572b86; margin-bottom: 12px;">📜 LUẬT CHƠI CUỘC ĐUA KỲ THÚ</h2>
+      <div style="font-size: 15px; line-height: 1.65; color: #333; max-height: 55vh; overflow-y: auto; padding-right: 8px; font-weight: 600;">
+        <p style="margin-bottom: 10px; font-weight: 800; color: #1670b8; font-size: 17px; display: flex; align-items: center; gap: 6px;">
+          <span>🏁</span> Mục tiêu:
+        </p>
+        <p style="margin-left: 20px; margin-bottom: 16px;">Trở thành người chơi đầu tiên hoàn thành đường chạy 40 ô và về đích <b>FINISH</b>!</p>
+        
+        <p style="margin-bottom: 10px; font-weight: 800; color: #1670b8; font-size: 17px; display: flex; align-items: center; gap: 6px;">
+          <span>🎲</span> Cách chơi cơ bản:
+        </p>
+        <ul style="margin-left: 25px; margin-bottom: 16px;">
+          <li style="margin-bottom: 6px;">Mỗi lượt, bạn sẽ tung xúc xắc để di chuyển quân cờ của mình tương ứng số bước.</li>
+          <li>Các ô khác nhau trên bàn cờ mang lại cơ hội và hiểm họa khác nhau.</li>
+        </ul>
+        
+        <p style="margin-bottom: 10px; font-weight: 800; color: #1670b8; font-size: 17px; display: flex; align-items: center; gap: 6px;">
+          <span>🎪</span> Các loại ô đặc biệt:
+        </p>
+        <ul style="margin-left: 25px; margin-bottom: 10px;">
+          <li style="margin-bottom: 8px;"><b style="color: #6d27a8;">❓ Ô Câu Hỏi (Màu Tím):</b> Trả lời câu hỏi trắc nghiệm kiến thức để được quyền đi tiếp. Trả lời sai sẽ bị đứng yên hoặc phạt lùi bước!</li>
+          <li style="margin-bottom: 8px;"><b style="color: #2c8c18;">🎁 Ô Phần Thưởng (Xanh Lá):</b> Nhận các thẻ bài hỗ trợ đắc lực như Khiên bảo vệ, Nhân đôi xúc xắc, hoặc Đổi vị trí.</li>
+          <li style="margin-bottom: 8px;"><b style="color: #1a7ec6;">🎡 Ô Vòng Quay (Xanh Dương):</b> Quay vòng xoay kỳ bí để thử vận may của bạn.</li>
+          <li style="margin-bottom: 8px;"><b style="color: #a44412;">⚠️ Ô Bẫy / Bom (Màu Đỏ):</b> Dẫm phải cạm bẫy khó khăn. Bạn buộc phải bốc thẻ bài hình phạt ngẫu nhiên (Lùi bước, mất lượt, về vạch xuất phát...).</li>
+        </ul>
+      </div>
+      <div style="text-align: center; margin-top: 18px;">
+        <button id="rulesClose" class="event-button" type="button" style="padding: 8px 24px;">Đóng</button>
+      </div>
+    </div>
+  </div>
+</section>

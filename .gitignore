@@ -1,0 +1,27 @@
+# C# / .NET
+[Dd]ebug/
+[Rr]elease/
+bin/
+obj/
+*.user
+*.userosscache
+*.sln.docstates
+
+# IDE / Editor
+.vs/
+.idea/
+*.suo
+.vscode/
+
+# Local settings
+appsettings.Development.json
+
+# Agents / Plugins
+.agents/
+.claude/
+.codex/
+skills-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db

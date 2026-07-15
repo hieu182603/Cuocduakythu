@@ -1,0 +1,93 @@
+<section id="lobby-screen" class="screen">
+    <div class="lobby-container">
+        <div class="lobby-header">
+            <button id="btn-lobby-back" class="btn-back"><i class="fa-solid fa-arrow-left"></i> Quay lại</button>
+            <h2>Thiết Lập Phòng Chơi</h2>
+        </div>
+
+        <div class="lobby-setup" id="lobby-setup-panel">
+            <div class="player-count-select">
+                <label>Số lượng người chơi (2 - 6):</label>
+                <div class="count-selector">
+                    <button type="button" class="btn-count-adj" data-adj="-1">-</button>
+                    <span id="player-count-display">4</span>
+                    <button type="button" class="btn-count-adj" data-adj="1">+</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Online Room Status Display -->
+        <div class="lobby-setup-online" id="lobby-online-panel" style="display:none;">
+            <div class="room-info-card" style="flex: 1; min-width: 100%;">
+                <div class="room-info-header">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="room-badge">ONLINE</span>
+                        <button id="host-only-controls" class="btn-gear-settings" style="display: none;" title="Cấu hình phòng chơi">
+                            <i class="fa-solid fa-gear"></i>
+                        </button>
+                    </div>
+                    <span class="player-count-badge">Sĩ số: <strong id="online-player-count">1/50</strong></span>
+                </div>
+                <div class="room-code-section">
+                    <span class="room-code-label">MÃ PHÒNG</span>
+                    <div class="room-code-value-wrapper">
+                        <span id="lobby-room-code-display">XXXXX</span>
+                        <button id="btn-copy-lobby-code" class="btn-copy-code" title="Sao chép mã phòng">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Players Setup Lists -->
+        <div class="players-setup-list" id="players-setup-list">
+            <!-- Dynamic player setup cards will be inserted here -->
+        </div>
+
+        <div class="lobby-actions">
+            <button id="btn-start-game" class="btn btn-success btn-lg">
+                <i class="fa-solid fa-flag-checkered"></i> Vào cuộc đua!
+            </button>
+            <div id="lobby-waiting-msg" style="display:none; font-size: 1rem; color: var(--warning); font-weight: 600;">
+                <i class="fa-solid fa-spinner fa-spin"></i> Đang chờ chủ phòng bắt đầu trận đấu...
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Selection Modal (within Lobby Screen for ease) -->
+    <div id="char-select-modal" class="modal">
+        <div class="modal-content char-select-content">
+            <h3>Chọn Nhân Vật Ngựa</h3>
+            <p class="modal-desc">Mỗi người chơi được tự do chọn nhân vật yêu thích, kể cả khi người khác đã chọn giống nhau.</p>
+            <div class="char-grid" id="char-grid">
+                <!-- 10 Horse characters populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Lobby Settings Modal (only for Host) -->
+    <div id="lobby-settings-modal" class="modal">
+        <div class="modal-overlay" id="lobby-settings-overlay"></div>
+        <div class="modal-content" style="max-width: 400px; border: 3px solid #1e293b; border-radius: 20px; box-shadow: 6px 6px 0px #1e293b; padding: 25px; background: #fef08a; position: relative; z-index: 101;">
+            <button class="btn-close-modal" id="btn-close-lobby-settings-modal" style="position: absolute; top: 15px; right: 15px; background: transparent; border: none; font-size: 1.2rem; cursor: pointer; color: #1e293b;"><i class="fa-solid fa-xmark"></i></button>
+            <h3 style="font-family: var(--font-title); font-size: 1.4rem; font-weight: 900; margin-bottom: 18px; border-bottom: 2px dashed #1e293b; padding-bottom: 8px; color: #1e293b;">CẤU HÌNH PHÒNG</h3>
+            <div class="settings-controls" style="display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px;">
+                <div class="control-row checkbox-row" style="display: flex; align-items: center; gap: 12px;">
+                    <label class="switch-container">
+                        <input type="checkbox" id="chk-host-spectate">
+                        <span class="switch-slider"></span>
+                    </label>
+                    <span class="control-label" style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Chế độ khán giả (Chỉ theo dõi)</span>
+                </div>
+                <div class="control-row input-row" style="display: flex; align-items: center; gap: 12px;">
+                    <span class="control-label" style="font-weight: 700; font-size: 0.95rem; color: #1e293b;">Số phút chơi (1 - 180):</span>
+                    <input type="number" id="input-game-duration" value="30" min="1" max="180" style="width: 70px; padding: 5px; border: 2px solid #1e293b; border-radius: 8px; font-weight: 800; text-align: center; background: #ffffff; color: #1e293b;">
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end;">
+                <button id="btn-save-lobby-settings" class="btn btn-success" style="font-weight: 800; padding: 8px 20px; border: 3px solid #1e293b; box-shadow: 2px 2px 0px #1e293b;">Lưu & Đóng</button>
+            </div>
+        </div>
+    </div>
+</section>
