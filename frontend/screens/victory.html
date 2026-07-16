@@ -1,33 +1,22 @@
-<section id="victory-screen" class="screen">
-    <div class="victory-container">
-        <div class="victory-header">
-            <i class="fa-solid fa-trophy trophy-huge"></i>
-            <h2>CUỘC ĐUA KẾT THÚC</h2>
-            <p>Chúc mừng tay đua đã về đích đầu tiên!</p>
-        </div>
-
-        <div class="winner-announcement">
-            <div class="winner-avatar" id="winner-avatar">
-                <!-- SVG / Icon of the winning horse -->
+<section id="victory-screen" class="screen" aria-labelledby="victory-title">
+    <div class="victory-confetti" aria-hidden="true"></div>
+    <div class="victory-shell">
+        <header class="victory-header">
+            <h2 id="victory-title"><i class="fa-solid fa-star" style="color: #ffda44; margin-right: 15px; font-size: 0.6em;"></i>Bảng xếp hạng<i class="fa-solid fa-star" style="color: #ffda44; margin-left: 15px; font-size: 0.6em;"></i></h2>
+            <div class="victory-ribbon">Cuộc đua đã kết thúc</div>
+        </header>
+        <div class="victory-podium" id="victory-podium" aria-label="Ba tay đua dẫn đầu"></div>
+        <section class="victory-leaderboard" aria-labelledby="final-ranking-title">
+            <div class="leaderboard-heading">
+                <div><span class="leaderboard-kicker">Kết quả chung cuộc</span><h3 id="final-ranking-title">Thứ hạng các tay đua</h3></div>
+                <span class="leaderboard-count" id="victory-player-count">0 tay đua</span>
             </div>
-            <div class="winner-name" id="winner-name">Người chơi 1</div>
-            <div class="winner-char" id="winner-char">Bạch Mã</div>
-        </div>
-
-        <div class="victory-leaderboard">
-            <h3>BẢNG ĐIỂM CHUNG CUỘC</h3>
-            <div class="leaderboard-table" id="victory-leaderboard-list">
-                <!-- Dynamic list of players sorted by final tiles/wins -->
-            </div>
-        </div>
-
+            <div class="leaderboard-columns" aria-hidden="true"><span>Hạng</span><span>Tay đua</span><span>Vòng</span><span>Tiến độ</span></div>
+            <div class="leaderboard-table" id="victory-leaderboard-list"></div>
+        </section>
         <div class="victory-actions">
-            <button id="btn-play-again" class="btn btn-primary btn-lg">
-                <i class="fa-solid fa-rotate-right"></i> Chơi lại lượt mới
-            </button>
-            <button id="btn-victory-home" class="btn btn-secondary">
-                <i class="fa-solid fa-house"></i> Về Menu chính
-            </button>
+            <button id="btn-play-again" class="victory-btn victory-btn-primary"><i class="fa-solid fa-rotate-right"></i> Chơi lại</button>
+            <button id="btn-victory-home" class="victory-btn victory-btn-secondary"><i class="fa-solid fa-house"></i> Về menu</button>
         </div>
     </div>
 </section>

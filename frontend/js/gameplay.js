@@ -1797,8 +1797,12 @@ function triggerVictory(winner) {
         const sceneTimerCard = document.getElementById("sceneTimer");
         if (sceneTimerCard) sceneTimerCard.style.display = "none";
 
-        const winnerChar = winner.character || CHARACTER_DATABASE[0];
-        logMessage(`🎉 KÌ TÍCH! Tay đua [${winner.name}] chơi nhân vật [${winnerChar.name}] đã chính thức vô địch!`, "log-win");
+        // Open the destination screen first. Ranking hydration must never leave
+        // players staring at the gameplay background if one record is malformed.
+        showScreen("victory");
+
+        const winnerChar = winner.character || CHARACTER_DATABASE.find(c => c.id === winner.horseId) || CHARACTER_DATABASE[0];
+        logMessage(`KẾT THÚC! Tay đua [${winner.name}] với nhân vật [${winnerChar.name}] đang dẫn đầu bảng xếp hạng.`, "log-win");
         
         // Disable dice
         const diceBtn = document.getElementById("btn-roll-dice");
@@ -1817,70 +1821,57 @@ function triggerVictory(winner) {
                 return b.tileIndex - a.tileIndex;
             });
 
-        let rankingHTML = '<div style="text-align: left; margin: 25px 0; background: rgba(255,255,255,0.4); border-radius: 16px; padding: 12px; max-height: 280px; overflow-y: auto; box-shadow: inset 0 2px 10px rgba(0,0,0,0.05); border: 1px solid rgba(255,255,255,0.6);">';
-        finalRanking.forEach((p, index) => {
-            let medal = index === 0 ? "🥇" : (index === 1 ? "🥈" : (index === 2 ? "🥉" : `<span style="color:#888;font-size:16px;font-weight:bold;">#${index+1}</span>`));
-            let bgColor = index === 0 ? "linear-gradient(90deg, rgba(255,215,0,0.2) 0%, rgba(255,215,0,0.05) 100%)" : "transparent";
-            let borderColor = index === 0 ? "rgba(255,215,0,0.4)" : "rgba(0,0,0,0.06)";
-            let textColor = index === 0 ? "#d32f2f" : "#444";
-            
-            rankingHTML += `
-                <div style="display: flex; align-items: center; padding: 14px 18px; margin-bottom: 8px; background: ${bgColor}; border: 1px solid ${borderColor}; border-radius: 12px; transition: all 0.2s;">
-                    <div style="width: 40px; font-size: 26px; text-align: center; margin-right: 15px;">${medal}</div>
-                    <div style="flex: 1; font-size: 20px; font-weight: 800; color: ${textColor}; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; letter-spacing: 0.5px;">
-                        ${p.name}
+        const escapeHTML = value => String(value ?? "")
+            .replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+        const getCharacter = player => player.character || CHARACTER_DATABASE.find(c => c.id === player.horseId) || CHARACTER_DATABASE[0];
+        const isCurrentPlayer = player => myPlayerId >= 0 && player.id === myPlayerId;
+
+        const podium = document.getElementById("victory-podium");
+        const list = document.getElementById("victory-leaderboard-list");
+        const count = document.getElementById("victory-player-count");
+        if (!podium || !list) throw new Error("Victory screen has not been loaded.");
+
+        podium.innerHTML = finalRanking.slice(0, 3).map((player, index) => {
+            const rank = index + 1;
+            const character = getCharacter(player);
+            return `<article class="podium-card" data-rank="${rank}">
+                ${rank === 1 ? '<i class="fa-solid fa-crown podium-crown" aria-hidden="true"></i>' : ''}
+                <div class="podium-avatar"><img src="${escapeHTML(character.image)}" alt="${escapeHTML(character.name)}"></div>
+                <strong class="podium-name">${escapeHTML(player.name)}</strong>
+                <div class="podium-step">
+                    <span class="podium-rank">${rank}</span>
+                    <div class="podium-stats">
+                        <span class="stat-flags"><i class="fa-solid fa-flag-checkered"></i> ${player.lapCount || 0}/5</span>
+                        <span class="stat-stars"><i class="fa-solid fa-star"></i> ${(player.tileIndex || 0)}</span>
                     </div>
                 </div>
-            `;
-        });
-        rankingHTML += '</div>';
+            </article>`;
+        }).join("");
 
-        // Show Game Over Banner inside the board
-        const board = document.getElementById("board");
-        let modal = document.getElementById("game-over-banner");
-        if (!modal && board) {
-            modal = document.createElement("div");
-            modal.id = "game-over-banner";
-            modal.className = "game-modal-card";
-            modal.style.position = "absolute";
-            modal.style.top = "50%";
-            modal.style.left = "50%";
-            modal.style.transform = "translate(-50%, -50%)";
-            modal.style.zIndex = "400";
-            modal.style.width = "90%";
-            modal.style.maxWidth = "480px";
-            modal.style.textAlign = "center";
-            modal.style.background = "rgba(255, 255, 255, 0.95)";
-            modal.style.backdropFilter = "blur(12px)";
-            modal.style.border = "4px solid #ffd700";
-            modal.style.borderRadius = "20px";
-            modal.style.padding = "30px 25px";
-            modal.style.boxShadow = "0 15px 40px rgba(0,0,0,0.5), inset 0 0 0 3px rgba(255,255,255,0.8)";
-            
-            modal.innerHTML = `
-                <h2 style="color: #d32f2f; font-size: 32px; font-weight: 900; margin-bottom: 10px; text-transform: uppercase;">
-                    TRÒ CHƠI KẾT THÚC
-                </h2>
-                ${rankingHTML}
-                <button id="btn-game-over-home" class="event-button" style="width: 100%; font-size: 20px; padding: 14px; border-radius: 12px; box-shadow: 0 6px 15px rgba(30,136,229,0.3);">
-                    Thoát về Menu
-                </button>
-            `;
-            board.appendChild(modal);
-            
-            document.getElementById("btn-game-over-home").onclick = () => {
-                modal.remove();
-                if (typeof connection !== 'undefined' && connection && typeof isOnlineMode !== 'undefined' && isOnlineMode) {
-                    connection.stop();
-                }
-                if (typeof showScreen === "function") showScreen("menu");
-            };
-        } else if (modal) {
-            modal.querySelector(".winner-name-span").innerText = winner.name;
-        }
+        list.innerHTML = finalRanking.map((player, index) => {
+            const character = getCharacter(player);
+            const current = isCurrentPlayer(player);
+            return `<div class="lb-row${current ? " is-current" : ""}">
+                <span class="lb-rank">${current ? 'Bạn <span style="margin-left: 5px; font-weight: bold; color: inherit;">' + (index + 1) + ' <i class="fa-solid fa-arrow-right"></i></span>' : (index + 1)}</span>
+                <span class="lb-player"><span class="lb-avatar"><img src="${escapeHTML(character.image)}" alt=""></span><span class="lb-name">${escapeHTML(player.name)}${current ? ' (Bạn)' : ''}</span></span>
+                <span class="lb-lap"><i class="fa-solid fa-flag-checkered"></i> ${player.lapCount || 0}/5</span>
+                <span class="lb-tile"><i class="fa-solid fa-star" style="color:#ffb703; margin-right:4px;"></i>${(player.tileIndex || 0)}</span>
+            </div>`;
+        }).join("") || '<div class="leaderboard-empty">Chưa có tay đua nào được xếp hạng.</div>';
+
+        if (count) count.textContent = `${finalRanking.length} tay đua`;
 
     } catch (error) {
         console.error("Lỗi khi kết thúc game:", error);
+        const podium = document.getElementById("victory-podium");
+        const list = document.getElementById("victory-leaderboard-list");
+        if (podium && !podium.children.length) {
+            podium.innerHTML = '<div class="podium-fallback"><i class="fa-solid fa-trophy"></i><strong>Cuộc đua đã kết thúc</strong></div>';
+        }
+        if (list && !list.children.length) {
+            list.innerHTML = '<div class="leaderboard-empty">Đang đồng bộ kết quả chung cuộc…</div>';
+        }
     }
 }
 
