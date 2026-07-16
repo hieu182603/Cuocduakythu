@@ -13,15 +13,6 @@ namespace Backend.Repositories
             _db = db;
         }
 
-        public async Task<List<McqQuestion>> GetAllAsync()
-        {
-            return await _db.McqQuestions
-                .Include(q => q.Options)
-                .Include(q => q.Part)
-                .OrderBy(q => q.QuestionNumber)
-                .ToListAsync();
-        }
-
         public async Task<List<McqQuestion>> GetByPartAsync(int partId)
         {
             return await _db.McqQuestions
@@ -30,6 +21,20 @@ namespace Backend.Repositories
                 .Where(q => q.PartId == partId)
                 .OrderBy(q => q.QuestionNumber)
                 .ToListAsync();
+        }
+
+        public Task<List<McqQuestion>> GetBatchAsync(int skip, int take, CancellationToken cancellationToken = default)
+        {
+            skip = Math.Max(0, skip);
+            take = Math.Clamp(take, 1, 100);
+            return _db.McqQuestions
+                .AsNoTracking()
+                .Include(q => q.Options)
+                .Include(q => q.Part)
+                .OrderBy(q => q.QuestionNumber)
+                .Skip(skip)
+                .Take(take)
+                .ToListAsync(cancellationToken);
         }
 
         public async Task<List<McqQuestion>> GetRandomAsync(int count)

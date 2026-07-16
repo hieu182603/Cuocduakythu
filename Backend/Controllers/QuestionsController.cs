@@ -16,22 +16,22 @@ namespace Backend.Controllers
 
         /// <summary>GET /api/questions — All questions with options.</summary>
         [HttpGet]
-        public async Task<IActionResult> GetAll()
+        public async Task<IActionResult> GetAll([FromQuery] int skip = 0, [FromQuery] int take = 40)
         {
-            var questions = await _questionRepo.GetAllAsync();
+            skip = Math.Max(0, skip);
+            take = Math.Clamp(take, 1, 100);
+            var questions = await _questionRepo.GetBatchAsync(skip, take, HttpContext.RequestAborted);
             var result = questions.Select(q => new
             {
                 q.Id,
                 q.QuestionNumber,
                 q.QuestionText,
-                q.CorrectAnswer,
                 PartName = q.Part?.PartName ?? "",
                 Difficulty = q.Part?.Difficulty ?? "medium",
                 Options = q.Options.OrderBy(o => o.OptionLetter).Select(o => new
                 {
                     o.OptionLetter,
-                    o.OptionText,
-                    o.IsCorrect
+                    o.OptionText
                 })
             });
             return Ok(result);
@@ -48,14 +48,12 @@ namespace Backend.Controllers
                 q.Id,
                 q.QuestionNumber,
                 q.QuestionText,
-                q.CorrectAnswer,
                 PartName = q.Part?.PartName ?? "",
                 Difficulty = q.Part?.Difficulty ?? "medium",
                 Options = q.Options.OrderBy(o => o.OptionLetter).Select(o => new
                 {
                     o.OptionLetter,
-                    o.OptionText,
-                    o.IsCorrect
+                    o.OptionText
                 })
             });
             return Ok(result);
@@ -85,15 +83,34 @@ namespace Backend.Controllers
                 question.Id,
                 question.QuestionNumber,
                 question.QuestionText,
-                question.CorrectAnswer,
                 PartName = question.Part?.PartName ?? "",
                 Difficulty = question.Part?.Difficulty ?? "medium",
                 Options = question.Options.OrderBy(o => o.OptionLetter).Select(o => new
                 {
                     o.OptionLetter,
-                    o.OptionText,
-                    o.IsCorrect
+                    o.OptionText
                 })
+            });
+        }
+
+        public sealed record AnswerSubmission(int AnswerIndex);
+
+        /// <summary>Validate one answer without exposing the answer key.</summary>
+        [HttpPost("{id:int}/answer")]
+        public async Task<IActionResult> CheckAnswer(int id, [FromBody] AnswerSubmission submission)
+        {
+            var question = await _questionRepo.GetByIdAsync(id);
+            if (question == null) return NotFound();
+
+            var orderedOptions = question.Options.OrderBy(o => o.OptionLetter).ToList();
+            var correctIndex = orderedOptions.FindIndex(o =>
+                string.Equals(o.OptionLetter, question.CorrectAnswer, StringComparison.OrdinalIgnoreCase));
+            if (correctIndex < 0) return Problem("Dữ liệu đáp án của câu hỏi không hợp lệ.");
+
+            return Ok(new
+            {
+                IsCorrect = submission.AnswerIndex == correctIndex,
+                CorrectIndex = correctIndex
             });
         }
     }

@@ -157,9 +157,12 @@ namespace Backend.Services
 
         public McqQuestion? GetRandomQuestion(GameRoom room)
         {
-            if (room.CachedQuestions.Count == 0) return null;
-            int idx = _random.Next(room.CachedQuestions.Count);
-            return room.CachedQuestions[idx];
+            lock (room.SyncRoot)
+            {
+                if (room.CachedQuestions.Count == 0) return null;
+                int idx = _random.Next(room.CachedQuestions.Count);
+                return room.CachedQuestions[idx];
+            }
         }
 
         public (bool isCorrect, string penaltyText) ProcessAnswer(Player player, McqQuestion question, int answerIndex)
@@ -212,6 +215,7 @@ namespace Backend.Services
                     break;
                 case 2: // Mất lượt -> Freeze 5s
                     player.FreezeTimeMs = 5000;
+                    player.FrozenUntilUtc = DateTime.UtcNow.AddMilliseconds(player.FreezeTimeMs);
                     break;
                 case 3: // Dice max 3 for 2 turns
                     player.DiceModifier = 2;
@@ -299,7 +303,10 @@ namespace Backend.Services
             {
                 case 0:  player.TileIndex = Math.Max(0, player.TileIndex - 3); break;                  // Lùi 3
                 case 1:  MovePlayerForward(player, 3); break;                                           // Tiến 3
-                case 2:  player.FreezeTimeMs = 5000; break;                                             // Đóng băng
+                case 2:
+                    player.FreezeTimeMs = 5000;
+                    player.FrozenUntilUtc = DateTime.UtcNow.AddMilliseconds(player.FreezeTimeMs);
+                    break;                                                                                // Đóng băng
                 case 3:  player.IsAutoRoll = true; break;                                               // Auto Roll
                 case 4:  player.TileIndex = Math.Max(0, player.TileIndex - 2); break;                   // Lùi 2
                 case 5:  player.Shield = true; break;                                                   // Nhận Khiên

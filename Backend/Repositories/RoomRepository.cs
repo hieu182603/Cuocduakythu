@@ -29,6 +29,7 @@ namespace Backend.Repositories
         {
             if (Rooms.TryRemove(roomCode, out var room))
             {
+                room.QuestionLoadCancellation.Cancel();
                 if (room.GameTimer != null)
                 {
                     room.GameTimer.Dispose();

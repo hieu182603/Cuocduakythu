@@ -15,7 +15,7 @@ namespace Backend.Hubs
     {
         private readonly IRoomRepository _roomRepo;
         private readonly IPlayerRepository _playerRepo;
-        private readonly IQuestionRepository _questionRepo;
+        private readonly IRoomQuestionLoader _questionLoader;
         private readonly IGameService _gameService;
         private readonly IHubContext<GameHub> _hubContext;
         private readonly ILogger<GameHub> _logger;
@@ -23,14 +23,14 @@ namespace Backend.Hubs
         public GameHub(
             IRoomRepository roomRepo,
             IPlayerRepository playerRepo,
-            IQuestionRepository questionRepo,
+            IRoomQuestionLoader questionLoader,
             IGameService gameService,
             IHubContext<GameHub> hubContext,
             ILogger<GameHub> logger)
         {
             _roomRepo = roomRepo;
             _playerRepo = playerRepo;
-            _questionRepo = questionRepo;
+            _questionLoader = questionLoader;
             _gameService = gameService;
             _hubContext = hubContext;
             _logger = logger;
@@ -48,19 +48,27 @@ namespace Backend.Hubs
 
             var room = _roomRepo.CreateRoom(roomCode);
 
-            var host = new Player
+            Player host;
+            lock (room.SyncRoot)
             {
-                Id = room.NextPlayerId++,
-                Name = playerName,
-                HorseId = horseId,
-                ConnectionId = Context.ConnectionId,
-                IsHost = true,
-                SessionToken = sessionToken
-            };
-            _playerRepo.AddPlayer(room, host);
+                host = new Player
+                {
+                    Id = room.NextPlayerId++,
+                    Name = playerName,
+                    HorseId = horseId,
+                    ConnectionId = Context.ConnectionId,
+                    IsHost = true,
+                    SessionToken = sessionToken
+                };
+                room.Players.Add(host);
+            }
+
+            // Start loading questions immediately. The first batch is usually
+            // ready before the host finishes configuring the lobby.
+            _questionLoader.Start(room);
 
             await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
-            await Clients.Caller.SendAsync("RoomCreated", roomCode, room.Players);
+            await Clients.Caller.SendAsync("RoomCreated", roomCode, room.GetPlayersSnapshot().Select(PlayerSnapshot.From));
             _logger.LogInformation("✨ [CreateRoom] Host {PlayerName} created room {RoomCode}. ConnID: {ConnectionId}", playerName, roomCode, Context.ConnectionId);
         }
 
@@ -75,14 +83,19 @@ namespace Backend.Hubs
             }
 
             // Check if player is rejoining an existing room (even if started)
-            var existingPlayer = room.Players.FirstOrDefault(p => p.SessionToken == sessionToken);
+            Player? existingPlayer;
+            lock (room.SyncRoot)
+            {
+                existingPlayer = room.Players.FirstOrDefault(p => p.SessionToken == sessionToken);
+                if (existingPlayer != null) existingPlayer.ConnectionId = Context.ConnectionId;
+            }
             if (existingPlayer != null)
             {
-                existingPlayer.ConnectionId = Context.ConnectionId;
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
 
                 if (room.IsStarted)
                 {
+                    var playersSnapshot = room.GetPlayersSnapshot();
                     int remainingMinutes = room.GameDurationMinutes;
                     if (room.GameStartTime.HasValue)
                     {
@@ -95,24 +108,7 @@ namespace Backend.Hubs
                         RoomCode = room.RoomCode,
                         IsStarted = room.IsStarted,
                         GameDurationMinutes = remainingMinutes,
-                        Players = room.Players.Select(p => new
-                        {
-                            p.Id,
-                            p.ConnectionId,
-                            p.Name,
-                            p.HorseId,
-                            p.TileIndex,
-                            p.WrongStreak,
-                            p.Shield,
-                            p.FreezeTimeMs,
-                            p.DoubleDice,
-                            p.IsAutoRoll,
-                            p.DiceModifier,
-                            p.LapCount,
-                            p.IsSpectator,
-                            p.IsHost,
-                            p.SessionToken
-                        }),
+                        Players = playersSnapshot.Select(PlayerSnapshot.From),
                         ActivePlayerIndex = room.ActivePlayerIndex
                     };
 
@@ -121,32 +117,32 @@ namespace Backend.Hubs
                 }
                 else
                 {
-                    await Clients.Group(roomCode).SendAsync("PlayerJoined", room.Players);
-                    await Clients.Caller.SendAsync("RoomCreated", room.RoomCode, room.Players);
+                    var playersSnapshot = room.GetPlayersSnapshot();
+                    var publicPlayers = playersSnapshot.Select(PlayerSnapshot.From).ToList();
+                    await Clients.Group(roomCode).SendAsync("PlayerJoined", publicPlayers);
+                    await Clients.Caller.SendAsync("RoomCreated", room.RoomCode, publicPlayers);
                 }
                 return;
             }
 
-            if (room.IsStarted)
+            Player newPlayer;
+            lock (room.SyncRoot)
             {
-                throw new HubException("Trận đấu đã bắt đầu.");
+                if (room.IsStarted) throw new HubException("Trận đấu đã bắt đầu.");
+                if (room.Players.Count >= 50) throw new HubException("Phòng đã đầy.");
+                newPlayer = new Player
+                {
+                    Id = room.NextPlayerId++,
+                    Name = playerName,
+                    HorseId = horseId,
+                    ConnectionId = Context.ConnectionId,
+                    SessionToken = sessionToken
+                };
+                room.Players.Add(newPlayer);
             }
-            if (room.Players.Count >= 50)
-            {
-                throw new HubException("Phòng đã đầy.");
-            }
-            var newPlayer = new Player
-            {
-                Id = room.NextPlayerId++,
-                Name = playerName,
-                HorseId = horseId,
-                ConnectionId = Context.ConnectionId,
-                SessionToken = sessionToken
-            };
-            _playerRepo.AddPlayer(room, newPlayer);
 
             await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
-            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.Players);
+            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.GetPlayersSnapshot().Select(PlayerSnapshot.From));
             _logger.LogInformation("👤 [JoinRoom] Player {PlayerName} (Horse: {HorseId}) joined room {RoomCode}. ConnID: {ConnectionId}", playerName, horseId, roomCode, Context.ConnectionId);
         }
 
@@ -156,11 +152,13 @@ namespace Backend.Hubs
             var room = _roomRepo.GetRoom(roomCode);
             if (room == null) return;
 
-            var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null) return;
-
-            player.Name = newName.Trim();
-            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.Players);
+            lock (room.SyncRoot)
+            {
+                var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+                if (player == null) return;
+                player.Name = newName.Trim();
+            }
+            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.GetPlayersSnapshot().Select(PlayerSnapshot.From));
         }
 
         public async Task UpdatePlayerHorse(string roomCode, string horseId)
@@ -169,63 +167,101 @@ namespace Backend.Hubs
             var room = _roomRepo.GetRoom(roomCode);
             if (room == null || room.IsStarted || string.IsNullOrWhiteSpace(horseId)) return;
 
-            var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null) return;
-
-            // Nhiều người chơi trong cùng phòng được phép dùng chung một nhân vật.
-            player.HorseId = horseId.Trim();
-            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.Players);
+            lock (room.SyncRoot)
+            {
+                var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+                if (player == null) return;
+                player.HorseId = horseId.Trim();
+            }
+            await Clients.Group(roomCode).SendAsync("PlayerJoined", room.GetPlayersSnapshot().Select(PlayerSnapshot.From));
         }
 
         public async Task StartGame(string roomCode, bool isHostSpectator, int durationMinutes)
         {
+            roomCode = roomCode.ToUpper().Trim();
             var room = _roomRepo.GetRoom(roomCode);
-            if (room == null) return;
+            if (room == null)
+            {
+                throw new HubException("Phòng không tồn tại.");
+            }
 
             // Only host can start
-            var host = room.Players.FirstOrDefault(p => p.IsHost);
+            var host = room.GetPlayersSnapshot().FirstOrDefault(p => p.IsHost);
             if (host == null || host.ConnectionId != Context.ConnectionId)
             {
                 await Clients.Caller.SendAsync("Error", "Chỉ chủ phòng mới có quyền bắt đầu trận đấu.");
                 return;
             }
 
+            lock (room.SyncRoot)
+            {
+                if (room.IsStarted)
+                    throw new HubException("Cuộc đua đã bắt đầu.");
+                if (room.IsStarting)
+                    throw new HubException("Máy chủ đang tải câu hỏi. Vui lòng chờ.");
+                room.IsStarting = true;
+            }
+
             // Apply host spectator mode
             host.IsSpectator = isHostSpectator;
 
+            if (!room.GetPlayersSnapshot().Any(p => !p.IsSpectator))
+            {
+                room.IsStarting = false;
+                throw new HubException("Cần ít nhất một tay đua để bắt đầu.");
+            }
+
             // Setup duration limit
             room.GameDurationMinutes = durationMinutes > 0 ? durationMinutes : 30;
-            room.GameStartTime = System.DateTime.UtcNow;
 
-            // Load questions from Supabase into room cache with a robust fallback
+            // Only wait for the first batch. Remaining batches continue loading
+            // in the background while the race is running.
             try
             {
-                room.CachedQuestions = await _questionRepo.GetAllAsync();
-                if (room.CachedQuestions == null || room.CachedQuestions.Count == 0)
-                {
-                    room.CachedQuestions = GetFallbackQuestions();
-                }
+                using var questionTimeout = CancellationTokenSource.CreateLinkedTokenSource(Context.ConnectionAborted);
+                questionTimeout.CancelAfter(TimeSpan.FromSeconds(20));
+                await _questionLoader.WaitForFirstBatchAsync(room, questionTimeout.Token);
+            }
+            catch (HubException)
+            {
+                room.IsStarting = false;
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                room.IsStarting = false;
+                _logger.LogError(ex, "[StartGame] Timed out waiting for the first question batch in room {RoomCode}.", roomCode);
+                throw new HubException("Batch câu hỏi đầu tiên chưa tải xong. Vui lòng thử lại.");
             }
             catch (System.Exception ex)
             {
-                _logger.LogError(ex, "❌ [StartGame] Failed to load questions from database. Loading fallback questions.");
-                room.CachedQuestions = GetFallbackQuestions();
+                room.IsStarting = false;
+                _logger.LogError(ex, "[StartGame] Failed to load questions from database for room {RoomCode}.", roomCode);
+                throw new HubException("Không thể tải câu hỏi từ database. Cuộc đua chưa bắt đầu.");
             }
-            room.IsStarted = true;
+
+            lock (room.SyncRoot)
+            {
+                room.IsStarted = true;
+                room.IsStarting = false;
+                room.IsFinished = false;
+                room.GameStartTime = System.DateTime.UtcNow;
+            }
 
             // Set active index to first non-spectator player
-            var firstRacer = room.Players.FirstOrDefault(p => !p.IsSpectator);
+            var playersAtStart = room.GetPlayersSnapshot();
+            var firstRacer = playersAtStart.FirstOrDefault(p => !p.IsSpectator);
             if (firstRacer != null)
             {
-                room.ActivePlayerIndex = room.Players.IndexOf(firstRacer);
+                room.ActivePlayerIndex = playersAtStart.IndexOf(firstRacer);
             }
             else
             {
                 room.ActivePlayerIndex = 0;
             }
 
-            await Clients.Group(roomCode).SendAsync("GameStarted", room.Players, room.ActivePlayerIndex, room.GameDurationMinutes);
-            _logger.LogInformation("🚀 [StartGame] Room {RoomCode} has started! Players count: {Count} | Duration: {Duration} min", roomCode, room.Players.Count, room.GameDurationMinutes);
+            await Clients.Group(roomCode).SendAsync("GameStarted", playersAtStart.Select(PlayerSnapshot.From), room.ActivePlayerIndex, room.GameDurationMinutes);
+            _logger.LogInformation("🚀 [StartGame] Room {RoomCode} has started! Players count: {Count} | Duration: {Duration} min", roomCode, playersAtStart.Count, room.GameDurationMinutes);
 
             // Setup server-side timer to end game when time expires
             if (room.GameTimer != null)
@@ -253,34 +289,71 @@ namespace Backend.Hubs
 
         public async Task RollDice(string roomCode)
         {
+            roomCode = roomCode.ToUpper().Trim();
             var room = _roomRepo.GetRoom(roomCode);
-            if (room == null || !room.IsStarted) return;
+            if (room == null || !room.IsStarted)
+                throw new HubException("Cuộc đua chưa bắt đầu hoặc đã kết thúc.");
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null || player.IsSpectator || player.CurrentQuestion != null || player.PendingTileEventType != null) return;
+            if (player == null)
+                throw new HubException("Không tìm thấy tay đua của kết nối hiện tại.");
+            if (player.IsSpectator)
+                throw new HubException("Khán giả không thể tung xúc xắc.");
+            var remainingFreezeMs = player.GetRemainingFreezeTimeMs();
+            if (remainingFreezeMs > 0)
+                throw new HubException($"Bạn đang bị đóng băng, còn {Math.Ceiling(remainingFreezeMs / 1000d)} giây.");
+            if (player.CurrentQuestion != null)
+                throw new HubException("Bạn cần hoàn thành câu hỏi hiện tại trước.");
+            if (player.PendingTileEventType != null)
+                throw new HubException("Bạn cần hoàn thành sự kiện hiện tại trước.");
 
-            player.IsAutoRoll = false;
+            lock (player)
+            {
+                if (player.IsRolling)
+                    throw new HubException("Xúc xắc đang được xử lý.");
+                player.IsRolling = true;
+            }
 
-            // Calculate roll
-            var (rollVal1, rollVal2, totalMove) = _gameService.CalculateDiceRoll(player);
-            await Clients.Group(roomCode).SendAsync("DiceRolled", player.Name, rollVal1, rollVal2, totalMove);
+            try
+            {
+                player.IsAutoRoll = false;
 
-            // Move player
-            _gameService.MovePlayer(player, totalMove);
-            await BroadcastPlayerMovement(roomCode, player, "forward", totalMove, 1500);
-            _logger.LogInformation("🎲 [RollDice] Room {RoomCode} | Player {PlayerName} rolled ({Val1}, {Val2}) -> Moved {Total} steps to Tile {Tile}", roomCode, player.Name, rollVal1, rollVal2, totalMove, player.TileIndex);
+                // Calculate roll
+                var (rollVal1, rollVal2, totalMove) = _gameService.CalculateDiceRoll(player);
+                await Clients.Group(roomCode).SendAsync("DiceRolled", player.Name, rollVal1, rollVal2, totalMove);
 
-            // Process tile landing
-            await ProcessTileLanding(roomCode, room, player);
+                // Move player
+                _gameService.MovePlayer(player, totalMove);
+                await BroadcastPlayerMovement(roomCode, player, "forward", totalMove, 1500);
+                _logger.LogInformation("🎲 [RollDice] Room {RoomCode} | Player {PlayerName} rolled ({Val1}, {Val2}) -> Moved {Total} steps to Tile {Tile}", roomCode, player.Name, rollVal1, rollVal2, totalMove, player.TileIndex);
+
+                // Process tile landing
+                await ProcessTileLanding(roomCode, room, player);
+            }
+            finally
+            {
+                lock (player)
+                {
+                    player.IsRolling = false;
+                }
+            }
         }
 
         public async Task ProcessNewTileLanding(string roomCode)
         {
+            roomCode = roomCode.ToUpper().Trim();
             var room = _roomRepo.GetRoom(roomCode);
             if (room == null || !room.IsStarted) return;
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
             if (player == null || player.IsSpectator) return;
+
+            lock (player)
+            {
+                if (!player.CanProcessNewTileLanding)
+                    throw new HubException("Không có ô mới nào cần xử lý.");
+                player.CanProcessNewTileLanding = false;
+            }
 
             await ProcessTileLanding(roomCode, room, player);
         }
@@ -291,14 +364,23 @@ namespace Backend.Hubs
             if (room == null || !room.IsStarted) return;
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null || player.PendingTileEventType != "trap") return;
+            if (player == null) return;
 
-            int landingTileIndex = player.PendingTileIndex;
-            var (trapName, trapDetail, movementDirection, movementSteps) = _gameService.ApplyTrap(player);
-            player.PendingTileEventType = null;
+            int landingTileIndex;
+            string trapName, trapDetail, movementDirection;
+            int movementSteps;
+            lock (player)
+            {
+                if (player.PendingTileEventType != "trap") return;
+                landingTileIndex = player.PendingTileIndex;
+                (trapName, trapDetail, movementDirection, movementSteps) = _gameService.ApplyTrap(player);
+                player.PendingTileEventType = null;
+                player.CanProcessNewTileLanding = player.TileIndex != landingTileIndex && player.TileIndex != 0;
+            }
 
             await Clients.Caller.SendAsync(
                 "TrapResolved",
+                player.Id,
                 player.Name,
                 trapName,
                 trapDetail,
@@ -318,14 +400,24 @@ namespace Backend.Hubs
             if (room == null || !room.IsStarted) return;
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null || player.PendingTileEventType != "reward") return;
+            if (player == null) return;
 
-            int landingTileIndex = player.PendingTileIndex;
-            var (rewardName, rewardDetail, isAutoRoll, movementDirection, movementSteps) = _gameService.ApplyReward(player);
-            player.PendingTileEventType = null;
+            int landingTileIndex;
+            string rewardName, rewardDetail, movementDirection;
+            bool isAutoRoll;
+            int movementSteps;
+            lock (player)
+            {
+                if (player.PendingTileEventType != "reward") return;
+                landingTileIndex = player.PendingTileIndex;
+                (rewardName, rewardDetail, isAutoRoll, movementDirection, movementSteps) = _gameService.ApplyReward(player);
+                player.PendingTileEventType = null;
+                player.CanProcessNewTileLanding = player.TileIndex != landingTileIndex && player.TileIndex != 0;
+            }
 
             await Clients.Caller.SendAsync(
                 "RewardResolved",
+                player.Id,
                 player.Name,
                 rewardName,
                 rewardDetail,
@@ -347,11 +439,15 @@ namespace Backend.Hubs
             if (room == null || !room.IsStarted) return;
 
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
-            if (player == null || player.CurrentQuestion == null) return;
+            if (player == null) return;
 
-            // Save and clear current question to prevent overwriting if ProcessTileLanding sets a new one
-            var answeredQuestion = player.CurrentQuestion;
-            player.CurrentQuestion = null;
+            McqQuestion answeredQuestion;
+            lock (player)
+            {
+                if (player.CurrentQuestion == null) return;
+                answeredQuestion = player.CurrentQuestion;
+                player.CurrentQuestion = null;
+            }
 
             int previousTileIndex = player.TileIndex;
             var (isCorrect, penaltyText) = _gameService.ProcessAnswer(player, answeredQuestion, answerIndex);
@@ -363,7 +459,7 @@ namespace Backend.Hubs
                 .FindIndex(o => o.IsCorrect);
 
             // Send outcome ONLY to caller
-            await Clients.Caller.SendAsync("AnswerOutcome", player.Name, isCorrect, correctIndex, player.WrongStreak, penaltyText);
+            await Clients.Caller.SendAsync("AnswerOutcome", player.Id, player.Name, isCorrect, correctIndex, player.WrongStreak, penaltyText);
             
             // Only broadcast a movement when the answer penalty actually changed position.
             if (player.TileIndex != previousTileIndex)
@@ -391,11 +487,21 @@ namespace Backend.Hubs
             var player = room.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
             if (player == null || player.IsSpectator) return;
 
-            var (sectorIdx, label, desc, isReward, movementDirection, movementSteps) = _gameService.SpinWheel(player);
+            int landingTileIndex, sectorIdx, movementSteps;
+            string label, desc, movementDirection;
+            bool isReward;
+            lock (player)
+            {
+                if (player.PendingTileEventType != "wheel") return;
+                landingTileIndex = player.PendingTileIndex;
+                player.PendingTileEventType = null;
+                (sectorIdx, label, desc, isReward, movementDirection, movementSteps) = _gameService.SpinWheel(player);
+                player.CanProcessNewTileLanding = player.TileIndex != landingTileIndex && player.TileIndex != 0;
+            }
 
             // Send WheelSpun ONLY to caller
             await Clients.Caller.SendAsync("WheelSpun",
-                player.Name, sectorIdx, label, desc, isReward,
+                player.Id, player.Name, sectorIdx, label, desc, isReward,
                 player.TileIndex, player.FreezeTimeMs, player.Shield,
                 player.IsAutoRoll);
 
@@ -448,11 +554,17 @@ namespace Backend.Hubs
 
                 case "question":
                     var question = _gameService.GetRandomQuestion(room);
-                    if (question == null) return;
+                    if (question == null)
+                    {
+                        _logger.LogError("No database question available for room {RoomCode}.", roomCode);
+                        await Clients.Client(player.ConnectionId).SendAsync("Error", "Không có câu hỏi hợp lệ trong database.");
+                        await Clients.Client(player.ConnectionId).SendAsync("EnableRollDice");
+                        return;
+                    }
                     
                     player.CurrentQuestion = question;
                     var answers = question.Options.OrderBy(o => o.OptionLetter).Select(o => o.OptionText).ToList();
-                    await Clients.Client(player.ConnectionId).SendAsync("TriggerQuestion", player.Name, question.QuestionText, answers, player.WrongStreak);
+                    await Clients.Client(player.ConnectionId).SendAsync("TriggerQuestion", player.Id, player.Name, question.QuestionText, answers, player.WrongStreak);
                     break;
 
                 case "trap":
@@ -460,13 +572,13 @@ namespace Backend.Hubs
                         if (player.Shield)
                         {
                             player.Shield = false;
-                            await Clients.Client(player.ConnectionId).SendAsync("TriggerShieldBlock", player.Name);
+                            await Clients.Client(player.ConnectionId).SendAsync("TriggerShieldBlock", player.Id, player.Name);
                         }
                         else
                         {
                             player.PendingTileEventType = "trap";
                             player.PendingTileIndex = player.TileIndex;
-                            await Clients.Client(player.ConnectionId).SendAsync("TriggerTrap", player.Name);
+                            await Clients.Client(player.ConnectionId).SendAsync("TriggerTrap", player.Id, player.Name);
                         }
                     }
                     break;
@@ -475,12 +587,14 @@ namespace Backend.Hubs
                     {
                         player.PendingTileEventType = "reward";
                         player.PendingTileIndex = player.TileIndex;
-                        await Clients.Client(player.ConnectionId).SendAsync("TriggerReward", player.Name);
+                        await Clients.Client(player.ConnectionId).SendAsync("TriggerReward", player.Id, player.Name);
                     }
                     break;
 
                 case "wheel":
-                    await Clients.Client(player.ConnectionId).SendAsync("TriggerWheel", player.Name);
+                    player.PendingTileEventType = "wheel";
+                    player.PendingTileIndex = player.TileIndex;
+                    await Clients.Client(player.ConnectionId).SendAsync("TriggerWheel", player.Id, player.Name);
                     break;
             }
         }
@@ -489,6 +603,7 @@ namespace Backend.Hubs
 
         public async Task ForceEndGame(string roomCode)
         {
+            roomCode = roomCode.ToUpper().Trim();
             var room = _roomRepo.GetRoom(roomCode);
             if (room == null || !room.IsStarted) return;
 
@@ -507,10 +622,16 @@ namespace Backend.Hubs
             ILogger logger)
         {
             var room = roomRepo.GetRoom(roomCode);
-            if (room == null || !room.IsStarted) return;
-            
-            // Set IsStarted to false immediately to prevent duplicate runs
-            room.IsStarted = false;
+            if (room == null) return;
+
+            List<Player> activeRacers;
+            lock (room.SyncRoot)
+            {
+                if (!room.IsStarted) return;
+                room.IsStarted = false;
+                room.IsFinished = true;
+                activeRacers = room.Players.Where(p => !p.IsSpectator).ToList();
+            }
 
             if (room.GameTimer != null)
             {
@@ -518,7 +639,6 @@ namespace Backend.Hubs
                 room.GameTimer = null;
             }
 
-            var activeRacers = room.Players.Where(p => !p.IsSpectator).ToList();
             if (activeRacers.Count > 0)
             {
                 var winner = activeRacers
@@ -527,12 +647,23 @@ namespace Backend.Hubs
                     .First();
                 logger.LogInformation("⏰ [Timer] Room {RoomCode} timeout reached. Ending game automatically.", roomCode);
                 await hubContext.Clients.Group(room.RoomCode).SendAsync("StatusUpdate", $"[Server] Hết giờ chơi! Trận đấu kết thúc.", "log-trap");
-                await hubContext.Clients.Group(room.RoomCode).SendAsync("GameFinished", winner);
+                var finalRanking = activeRacers
+                    .OrderByDescending(p => p.LapCount)
+                    .ThenByDescending(p => p.TileIndex)
+                    .Select(PlayerSnapshot.From)
+                    .ToList();
+                await hubContext.Clients.Group(room.RoomCode).SendAsync("GameFinished", PlayerSnapshot.From(winner), finalRanking);
             }
         }
 
         public async Task EndGameDueToTimeout(string roomCode)
         {
+            roomCode = roomCode.ToUpper().Trim();
+            var room = _roomRepo.GetRoom(roomCode);
+            var caller = room?.Players.FirstOrDefault(p => p.ConnectionId == Context.ConnectionId);
+            if (room == null || caller == null || !caller.IsHost)
+                throw new HubException("Chỉ chủ phòng mới có quyền kết thúc trận đấu.");
+
             await EndGameDueToTimeoutInternal(roomCode, _hubContext, _roomRepo, _logger);
         }
 
@@ -546,7 +677,7 @@ namespace Backend.Hubs
                 return;
             }
 
-            var player = room.Players.FirstOrDefault(p => p.SessionToken == sessionToken);
+            var player = room.GetPlayersSnapshot().FirstOrDefault(p => p.SessionToken == sessionToken);
             if (player == null)
             {
                 await Clients.Caller.SendAsync("Error", "Không tìm thấy thông tin người chơi trong phòng này.");
@@ -570,33 +701,52 @@ namespace Backend.Hubs
             // Broadcast that player reconnected
             await Clients.Group(roomCode).SendAsync("StatusUpdate", $"[Hệ thống] {player.Name} đã kết nối lại.", "log-reward");
 
+            var rejoinPlayersSnapshot = room.GetPlayersSnapshot();
             var roomState = new
             {
                 RoomCode = room.RoomCode,
                 IsStarted = room.IsStarted,
+                IsFinished = room.IsFinished,
                 GameDurationMinutes = remainingMinutes,
-                Players = room.Players.Select(p => new
-                {
-                    p.Id,
-                    p.ConnectionId,
-                    p.Name,
-                    p.HorseId,
-                    p.TileIndex,
-                    p.WrongStreak,
-                    p.Shield,
-                    p.FreezeTimeMs,
-                    p.DoubleDice,
-                    p.IsAutoRoll,
-                    p.DiceModifier,
-                    p.LapCount,
-                    p.IsSpectator,
-                    p.IsHost,
-                    p.SessionToken
-                }),
+                Players = rejoinPlayersSnapshot.Select(PlayerSnapshot.From),
                 ActivePlayerIndex = room.ActivePlayerIndex
             };
 
             await Clients.Caller.SendAsync("Rejoined", roomState);
+
+            // Restore an interrupted personal event after reconnect. Without
+            // this, RollDice is correctly rejected by the server but the client
+            // has no modal available to finish the pending action.
+            if (room.IsStarted)
+            {
+                if (player.CurrentQuestion != null)
+                {
+                    var question = player.CurrentQuestion;
+                    var answers = question.Options
+                        .OrderBy(o => o.OptionLetter)
+                        .Select(o => o.OptionText)
+                        .ToList();
+                    await Clients.Caller.SendAsync(
+                        "TriggerQuestion",
+                        player.Id,
+                        player.Name,
+                        question.QuestionText,
+                        answers,
+                        player.WrongStreak);
+                }
+                else if (player.PendingTileEventType == "trap")
+                {
+                    await Clients.Caller.SendAsync("TriggerTrap", player.Id, player.Name);
+                }
+                else if (player.PendingTileEventType == "reward")
+                {
+                    await Clients.Caller.SendAsync("TriggerReward", player.Id, player.Name);
+                }
+                else if (player.PendingTileEventType == "wheel")
+                {
+                    await Clients.Caller.SendAsync("TriggerWheel", player.Id, player.Name);
+                }
+            }
             _logger.LogInformation("🔄 [RejoinRoom] Player {PlayerName} reconnected to Room {RoomCode}. ConnID: {ConnectionId}", player.Name, roomCode, Context.ConnectionId);
         }
 
@@ -625,23 +775,30 @@ namespace Backend.Hubs
                             if (currentRoom != null && !currentRoom.IsStarted)
                             {
                                 // Check if they haven't reconnected (ConnectionId is still the disconnected one)
-                                var p = currentRoom.Players.FirstOrDefault(x => x.ConnectionId == connId);
+                                Player? p;
+                                List<Player> remainingPlayers;
+                                lock (currentRoom.SyncRoot)
+                                {
+                                    p = currentRoom.Players.FirstOrDefault(x => x.ConnectionId == connId);
+                                    if (p != null)
+                                    {
+                                        bool wasHost = p.IsHost;
+                                        currentRoom.Players.Remove(p);
+                                        if (wasHost && currentRoom.Players.Count > 0)
+                                        {
+                                            var newHost = currentRoom.Players.First();
+                                            newHost.IsHost = true;
+                                            _logger.LogWarning("👑 [HostMigration] Host {OldHost} left. Reassigned host role to player {NewHost}.", pName, newHost.Name);
+                                        }
+                                    }
+                                    remainingPlayers = currentRoom.Players.ToList();
+                                }
                                 if (p != null)
                                 {
-                                    bool wasHost = p.IsHost;
-                                    _playerRepo.RemovePlayer(currentRoom, connId);
-                                    
-                                    if (wasHost && currentRoom.Players.Count > 0)
-                                    {
-                                        var newHost = currentRoom.Players.First();
-                                        newHost.IsHost = true;
-                                        _logger.LogWarning("👑 [HostMigration] Host {OldHost} left. Reassigned host role to player {NewHost}.", pName, newHost.Name);
-                                    }
-
-                                    await Clients.Group(rCode).SendAsync("PlayerDisconnected", pName, currentRoom.Players);
+                                    await Clients.Group(rCode).SendAsync("PlayerDisconnected", pName, remainingPlayers.Select(PlayerSnapshot.From));
                                     _logger.LogWarning("❌ [Disconnect] Player {PlayerName} left room {RoomCode} (Lobby).", pName, rCode);
 
-                                    if (currentRoom.Players.Count == 0)
+                                    if (remainingPlayers.Count == 0)
                                     {
                                         _roomRepo.RemoveRoom(rCode);
                                         _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", rCode);
@@ -653,8 +810,8 @@ namespace Backend.Hubs
                     else
                     {
                         // In game: mark player disconnected, do not remove
-                        player.ConnectionId = string.Empty;
-                        await Clients.Group(room.RoomCode).SendAsync("PlayerDisconnected", player.Name, room.Players);
+                        lock (player) player.ConnectionId = string.Empty;
+                        await Clients.Group(room.RoomCode).SendAsync("PlayerDisconnected", player.Name, room.GetPlayersSnapshot().Select(PlayerSnapshot.From));
                         _logger.LogWarning("🔌 [Disconnect] Player {PlayerName} disconnected from active room {RoomCode}.", player.Name, room.RoomCode);
 
                         // If all connections are lost, clean up the room after a 10 seconds grace period
@@ -665,7 +822,7 @@ namespace Backend.Hubs
                             var currentRoom = _roomRepo.GetRoom(rCode);
                             if (currentRoom != null && currentRoom.IsStarted)
                             {
-                                if (currentRoom.Players.All(p => string.IsNullOrEmpty(p.ConnectionId)))
+                                if (currentRoom.GetPlayersSnapshot().All(p => string.IsNullOrEmpty(p.ConnectionId)))
                                 {
                                     _roomRepo.RemoveRoom(rCode);
                                     _logger.LogWarning("🧹 [Cleanup] Room {RoomCode} has no active players. Removing room.", rCode);
@@ -680,72 +837,5 @@ namespace Backend.Hubs
             await base.OnDisconnectedAsync(exception);
         }
 
-        private List<McqQuestion> GetFallbackQuestions()
-        {
-            var fallback = new List<McqQuestion>
-            {
-                new McqQuestion {
-                    Id = 1,
-                    QuestionNumber = 1,
-                    QuestionText = "Thủ đô của Việt Nam là thành phố nào?",
-                    CorrectAnswer = "C",
-                    Options = new List<McqOption> {
-                        new McqOption { OptionLetter = "A", OptionText = "TP. Hồ Chí Minh", IsCorrect = false },
-                        new McqOption { OptionLetter = "B", OptionText = "Đà Nẵng", IsCorrect = false },
-                        new McqOption { OptionLetter = "C", OptionText = "Hà Nội", IsCorrect = true },
-                        new McqOption { OptionLetter = "D", OptionText = "Hải Phòng", IsCorrect = false }
-                    }
-                },
-                new McqQuestion {
-                    Id = 2,
-                    QuestionNumber = 2,
-                    QuestionText = "Trái Đất tự quay quanh trục mất bao lâu?",
-                    CorrectAnswer = "B",
-                    Options = new List<McqOption> {
-                        new McqOption { OptionLetter = "A", OptionText = "12 giờ", IsCorrect = false },
-                        new McqOption { OptionLetter = "B", OptionText = "24 giờ", IsCorrect = true },
-                        new McqOption { OptionLetter = "C", OptionText = "365 ngày", IsCorrect = false },
-                        new McqOption { OptionLetter = "D", OptionText = "30 ngày", IsCorrect = false }
-                    }
-                },
-                new McqQuestion {
-                    Id = 3,
-                    QuestionNumber = 3,
-                    QuestionText = "Số nguyên tố nhỏ nhất là số nào?",
-                    CorrectAnswer = "C",
-                    Options = new List<McqOption> {
-                        new McqOption { OptionLetter = "A", OptionText = "0", IsCorrect = false },
-                        new McqOption { OptionLetter = "B", OptionText = "1", IsCorrect = false },
-                        new McqOption { OptionLetter = "C", OptionText = "2", IsCorrect = true },
-                        new McqOption { OptionLetter = "D", OptionText = "3", IsCorrect = false }
-                    }
-                },
-                new McqQuestion {
-                    Id = 4,
-                    QuestionNumber = 4,
-                    QuestionText = "Kim loại nào dẫn điện tốt nhất ở điều kiện thường?",
-                    CorrectAnswer = "C",
-                    Options = new List<McqOption> {
-                        new McqOption { OptionLetter = "A", OptionText = "Vàng", IsCorrect = false },
-                        new McqOption { OptionLetter = "B", OptionText = "Đồng", IsCorrect = false },
-                        new McqOption { OptionLetter = "C", OptionText = "Bạc", IsCorrect = true },
-                        new McqOption { OptionLetter = "D", OptionText = "Nhôm", IsCorrect = false }
-                    }
-                },
-                new McqQuestion {
-                    Id = 5,
-                    QuestionNumber = 5,
-                    QuestionText = "Đất nước mặt trời mọc là quốc gia nào?",
-                    CorrectAnswer = "D",
-                    Options = new List<McqOption> {
-                        new McqOption { OptionLetter = "A", OptionText = "Hàn Quốc", IsCorrect = false },
-                        new McqOption { OptionLetter = "B", OptionText = "Trung Quốc", IsCorrect = false },
-                        new McqOption { OptionLetter = "C", OptionText = "Việt Nam", IsCorrect = false },
-                        new McqOption { OptionLetter = "D", OptionText = "Nhật Bản", IsCorrect = true }
-                    }
-                }
-            };
-            return fallback;
-        }
     }
 }

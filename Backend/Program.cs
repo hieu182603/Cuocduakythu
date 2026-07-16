@@ -12,7 +12,14 @@ builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // ── Database ──
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsql => npgsql
+            .CommandTimeout(30)
+            .EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(3),
+                errorCodesToAdd: null)));
 
 // ── Repositories (DI) ──
 builder.Services.AddScoped<IQuestionRepository, QuestionRepository>();
@@ -21,6 +28,7 @@ builder.Services.AddSingleton<IPlayerRepository, PlayerRepository>();
 
 // ── Services (DI) ──
 builder.Services.AddSingleton<IGameService, GameService>();
+builder.Services.AddSingleton<IRoomQuestionLoader, RoomQuestionLoader>();
 
 // ── API Controllers ──
 builder.Services.AddControllers();
@@ -77,4 +85,3 @@ app.MapHub<GameHub>("/gameHub");
 app.MapGet("/", () => "Cuộc Đua Kỳ Thú - Backend Server Running! (ASP.NET Core 8)");
 
 app.Run();
-

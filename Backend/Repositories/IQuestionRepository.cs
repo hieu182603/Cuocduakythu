@@ -4,8 +4,7 @@ namespace Backend.Repositories
 {
     public interface IQuestionRepository
     {
-        /// <summary>Get all questions with their options and part info.</summary>
-        Task<List<McqQuestion>> GetAllAsync();
+        Task<List<McqQuestion>> GetBatchAsync(int skip, int take, CancellationToken cancellationToken = default);
 
         /// <summary>Get questions filtered by part.</summary>
         Task<List<McqQuestion>> GetByPartAsync(int partId);

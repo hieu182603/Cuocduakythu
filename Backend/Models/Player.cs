@@ -17,8 +17,23 @@ namespace Backend.Models
         public int LapCount { get; set; } = 0;
         public bool IsSpectator { get; set; } = false;
         public bool IsHost { get; set; } = false;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool IsRolling { get; set; } = false;
+        [System.Text.Json.Serialization.JsonIgnore]
+        public bool CanProcessNewTileLanding { get; set; } = false;
+        public DateTime? FrozenUntilUtc { get; set; }
         public McqQuestion? CurrentQuestion { get; set; }
         public string? PendingTileEventType { get; set; }
         public int PendingTileIndex { get; set; }
+
+        public int GetRemainingFreezeTimeMs()
+        {
+            if (!FrozenUntilUtc.HasValue) return 0;
+            var remaining = (int)Math.Ceiling((FrozenUntilUtc.Value - DateTime.UtcNow).TotalMilliseconds);
+            if (remaining > 0) return remaining;
+            FrozenUntilUtc = null;
+            FreezeTimeMs = 0;
+            return 0;
+        }
     }
 }

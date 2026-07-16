@@ -6,25 +6,28 @@ namespace Backend.Repositories
     {
         public Player? GetPlayer(GameRoom room, string connectionId)
         {
-            return room.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            lock (room.SyncRoot)
+                return room.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
         }
 
         public Player? GetPlayerById(GameRoom room, int playerId)
         {
-            return room.Players.FirstOrDefault(p => p.Id == playerId);
+            lock (room.SyncRoot)
+                return room.Players.FirstOrDefault(p => p.Id == playerId);
         }
 
         public void AddPlayer(GameRoom room, Player player)
         {
-            room.Players.Add(player);
+            lock (room.SyncRoot)
+                room.Players.Add(player);
         }
 
         public void RemovePlayer(GameRoom room, string connectionId)
         {
-            var player = room.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
-            if (player != null)
+            lock (room.SyncRoot)
             {
-                room.Players.Remove(player);
+                var player = room.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+                if (player != null) room.Players.Remove(player);
             }
         }
 

@@ -79,15 +79,5 @@ namespace Backend.Controllers
             return Ok(leaderboard);
         }
 
-        /// <summary>DELETE /api/rooms/{code} — Remove a room.</summary>
-        [HttpDelete("{code}")]
-        public IActionResult DeleteRoom(string code)
-        {
-            var room = _roomRepo.GetRoom(code.ToUpper());
-            if (room == null) return NotFound(new { Message = "Phòng không tồn tại." });
-
-            _roomRepo.RemoveRoom(code.ToUpper());
-            return Ok(new { Message = "Phòng đã được xóa." });
-        }
     }
 }
