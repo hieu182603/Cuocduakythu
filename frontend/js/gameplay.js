@@ -595,6 +595,18 @@ document.addEventListener('click', () => {
 }, { once: true });
 
 function renderScoreboard() {
+    const list = document.getElementById("scoreboard-list");
+    if (!list) return;
+    list.innerHTML = "";
+
+    // Sort players by position (lapCount descending, then tileIndex descending, filter out spectators and players who haven't completed a lap yet)
+    const sorted = [...players]
+        .filter(p => !p.isSpectator)
+        .sort((a, b) => {
+            if (b.lapCount !== a.lapCount) {
+                return b.lapCount - a.lapCount;
+            }
+            return b.tileIndex - a.tileIndex;
         })
         .slice(0, 10);
 
