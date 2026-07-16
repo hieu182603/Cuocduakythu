@@ -805,7 +805,7 @@ function initSignalR() {
 
     connection.start()
         .then(() => {
-            console.log("Connected to SignalR GameHub on port 5089!");
+            console.log("Connected to SignalR GameHub successfully!");
             logMessage("Đã thiết lập kết nối SignalR với máy chủ.", "log-reward");
             
             // Auto-rejoin if page was refreshed
