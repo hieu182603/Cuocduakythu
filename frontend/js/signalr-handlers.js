@@ -66,6 +66,7 @@ function initSignalR() {
     });
 
     connection.on("GameStarted", (playersList, activeIdx, durationMinutes) => {
+        isGameEnding = false;
         players = playersList.map(p => {
             const char = CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[p.id % CHARACTER_DATABASE.length];
             return {
@@ -141,8 +142,14 @@ function initSignalR() {
         }, 1500);
     });
 
-    connection.on("PlayerMoved", (playerId, targetTileIndex, lapCompleted, direction, steps) => {
-        queueOnlineMovement({ playerId, targetTileIndex, lapCompleted, direction, steps });
+    connection.on("PlayerMoved", (playerId, targetTileIndex, lapCount, direction, steps) => {
+        if (playerId === myPlayerId) {
+            queueOnlineMovement({ playerId, targetTileIndex, lapCompleted: lapCount, direction, steps });
+        } else {
+            // Do not let animations from dozens of remote players block this
+            // client's personal dice/event queue.
+            syncRemotePlayerMovement(playerId, targetTileIndex, lapCount);
+        }
     });
 
     connection.on("EnableRollDice", () => {
@@ -155,21 +162,21 @@ function initSignalR() {
         });
     });
 
-    connection.on("TriggerTrap", (playerName) => {
-        if (myPlayerId !== -1 && players.find(p => p.id === myPlayerId)?.name === playerName) {
+    connection.on("TriggerTrap", (playerId, playerName) => {
+        if (myPlayerId !== -1 && playerId === myPlayerId) {
             connection.invoke("ResolveTrap", roomCode);
         }
     });
 
-    connection.on("TriggerReward", (playerName) => {
-        if (myPlayerId !== -1 && players.find(p => p.id === myPlayerId)?.name === playerName) {
+    connection.on("TriggerReward", (playerId, playerName) => {
+        if (myPlayerId !== -1 && playerId === myPlayerId) {
             connection.invoke("ResolveReward", roomCode);
         }
     });
 
-    connection.on("TriggerQuestion", (playerName, questionText, answersList, wrongStreak) => {
+    connection.on("TriggerQuestion", (playerId, playerName, questionText, answersList, wrongStreak) => {
         queueOnlineCallback(() => new Promise(resolvePopup => {
-            const player = players.find(p => p.name === playerName);
+            const player = players.find(p => p.id === playerId);
             currentQuestion = { question: questionText, answers: answersList, correct: -1 };
             
             const modal = document.getElementById("question-modal");
@@ -222,7 +229,7 @@ function initSignalR() {
         }));
     });
 
-    connection.on("AnswerOutcome", (playerName, isCorrect, correctIndex, wrongStreak, penaltyText) => {
+    connection.on("AnswerOutcome", (playerId, playerName, isCorrect, correctIndex, wrongStreak, penaltyText) => {
         stopQuestionTimer();
         const allButtons = document.querySelectorAll(".answer-btn");
         allButtons.forEach(btn => btn.disabled = true);
@@ -260,9 +267,9 @@ function initSignalR() {
         }, 2000);
     });
 
-    connection.on("TrapResolved", (playerName, trapName, trapDetail, newTileIndex, freezeTimeMs, landingTileIndex) => {
+    connection.on("TrapResolved", (playerId, playerName, trapName, trapDetail, newTileIndex, freezeTimeMs, landingTileIndex) => {
         queueOnlineCallback(() => new Promise(resolvePopup => {
-            const player = players.find(p => p.name === playerName);
+            const player = players.find(p => p.id === playerId);
             const modal = document.getElementById("trap-modal");
             const cardsContainer = document.getElementById("trap-cards-container");
             const closeBtn = document.getElementById("btn-close-trap-modal");
@@ -355,7 +362,7 @@ function initSignalR() {
                                     const tile = TILE_COORDS[newTileIndex];
                                     // Only process new tile landing if they actually moved to a different non-start tile
                                     if (newTileIndex !== eventTileIndex && tile.type !== "start") {
-                                        connection.invoke("ProcessNewTileLanding", roomCode);
+                                        connection.invoke("ProcessNewTileLanding", roomCode).catch(err => console.warn("Landing already processed:", err));
                                     } else {
                                         if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                                         document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
@@ -373,9 +380,9 @@ function initSignalR() {
         }));
     });
 
-    connection.on("RewardResolved", (playerName, rewardName, rewardDetail, newTileIndex, shield, doubleDice, isExtraTurn) => {
+    connection.on("RewardResolved", (playerId, playerName, rewardName, rewardDetail, newTileIndex, shield, doubleDice, isExtraTurn) => {
         queueOnlineCallback(() => new Promise(resolvePopup => {
-            const player = players.find(p => p.name === playerName);
+            const player = players.find(p => p.id === playerId);
             const modal = document.getElementById("reward-modal");
             const cardsContainer = document.getElementById("reward-cards-container");
             const closeBtn = document.getElementById("btn-close-reward-modal");
@@ -466,7 +473,7 @@ function initSignalR() {
                                     const tile = TILE_COORDS[newTileIndex];
                                     // Only process new tile landing if they actually moved to a different non-start tile
                                     if (newTileIndex !== eventTileIndex && tile.type !== "start") {
-                                        connection.invoke("ProcessNewTileLanding", roomCode);
+                                        connection.invoke("ProcessNewTileLanding", roomCode).catch(err => console.warn("Landing already processed:", err));
                                     } else {
                                         if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                                         document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
@@ -484,7 +491,7 @@ function initSignalR() {
         }));
     });
 
-    connection.on("TriggerShieldBlock", (playerName) => {
+    connection.on("TriggerShieldBlock", (playerId, playerName) => {
         logMessage(`Lá chắn của [${playerName}] đã hóa giải bẫy thành công!`, "log-reward");
         const modal = document.getElementById("reward-modal");
         
@@ -514,7 +521,7 @@ function initSignalR() {
         }
     });
 
-    connection.on("TriggerWheel", (playerName) => {
+    connection.on("TriggerWheel", (playerId, playerName) => {
         queueOnlineCallback(() => new Promise(resolvePopup => {
             const modal = document.getElementById("wheel-modal");
             document.getElementById("wheel-result-text").style.display = "none";
@@ -538,8 +545,8 @@ function initSignalR() {
         }));
     });
 
-    connection.on("WheelSpun", (playerName, sectorIndex, label, desc, isReward, newTileIndex, freezeTimeMs, shield, isAutoRoll) => {
-        const player = players.find(p => p.name === playerName);
+    connection.on("WheelSpun", (playerId, playerName, sectorIndex, label, desc, isReward, newTileIndex, freezeTimeMs, shield, isAutoRoll) => {
+        const player = players.find(p => p.id === playerId);
         let eventTileIndex = -1;
         if (player) {
             eventTileIndex = player.tileIndex;
@@ -597,7 +604,7 @@ function initSignalR() {
                     if (myPlayerId !== -1) {
                         const tile = TILE_COORDS[newTileIndex];
                         if (newTileIndex !== eventTileIndex && tile.type !== "start") {
-                            connection.invoke("ProcessNewTileLanding", roomCode);
+                            connection.invoke("ProcessNewTileLanding", roomCode).catch(err => console.warn("Landing already processed:", err));
                         } else {
                             if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
                             document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
@@ -618,13 +625,26 @@ function initSignalR() {
         logMessage(msg, className);
     });
 
-    connection.on("GameFinished", (winner) => {
-        // Hydrate for ALL players as fallback
-        players.forEach(p => {
-            if (!p.character) {
-                p.character = CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0];
-            }
-        });
+    connection.on("GameFinished", (winner, finalRanking) => {
+        isGameEnding = true;
+        if (Array.isArray(finalRanking) && finalRanking.length > 0) {
+            players = finalRanking.map(p => ({
+                id: p.id,
+                connectionId: p.connectionId,
+                name: p.name,
+                horseId: p.horseId,
+                character: CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0],
+                tileIndex: p.tileIndex,
+                wrongStreak: p.wrongStreak,
+                shield: p.shield,
+                freezeTimeMs: p.freezeTimeMs,
+                doubleDice: p.doubleDice,
+                isAutoRoll: p.isAutoRoll,
+                diceModifier: p.diceModifier,
+                lapCount: p.lapCount,
+                isSpectator: p.isSpectator
+            }));
+        }
         
         const localWinner = players.find(p => p.id === winner.id) || winner;
         if (!localWinner.character) {
@@ -671,11 +691,17 @@ function initSignalR() {
     });
 
     connection.on("Rejoined", (roomState) => {
+        // A late reconnect response from a room that has just finished must not
+        // overwrite the final leaderboard with the lobby screen.
+        if (!roomState.isStarted && (isGameEnding || screens.victory?.classList.contains("active"))) {
+            return;
+        }
+
         isOnlineMode = true;
         roomCode = roomState.roomCode;
         
         // Determine if I am the host
-        const me = roomState.players.find(p => p.sessionToken === sessionToken);
+        const me = roomState.players.find(p => p.connectionId === connection.connectionId);
         if (me) {
             myPlayerId = me.isSpectator ? -1 : me.id;
             isHost = me.isHost;
@@ -699,6 +725,18 @@ function initSignalR() {
                 isSpectator: p.isSpectator
             };
         });
+
+        // A refreshed/reconnected client may have missed the original
+        // GameFinished broadcast. Rebuild the same final result from room state.
+        if (roomState.isFinished) {
+            const finalWinner = players
+                .filter(p => !p.isSpectator)
+                .sort((a, b) => (b.lapCount - a.lapCount) || (b.tileIndex - a.tileIndex))[0];
+            isGameEnding = true;
+            if (finalWinner) triggerVictory(finalWinner);
+            else showScreen("victory");
+            return;
+        }
 
         if (roomState.isStarted) {
             // Re-render board and gameplay
@@ -759,7 +797,7 @@ function initSignalR() {
 
     connection.onreconnected((connectionId) => {
         console.log("SignalR reconnected. ConnectionId: " + connectionId);
-        if (isOnlineMode && roomCode && sessionToken) {
+        if (isOnlineMode && roomCode && sessionToken && !isGameEnding) {
             connection.invoke("RejoinRoom", roomCode, sessionToken)
                 .catch(err => console.error("Error rejoining room: ", err));
         }

@@ -6,11 +6,11 @@ async function loadScreens() {
         { id: "main-menu-screen", key: "menu", file: "screens/menu.html" },
         { id: "lobby-screen", key: "lobby", file: "screens/lobby.html" },
         { id: "gameplay-screen", key: "gameplay", file: "screens/gameplay.html" },
-        { id: "victory-screen", key: "victory", file: "screens/victory.html" }
+        { id: "victory-screen", key: "victory", file: "screens/victory.html?v=2" }
     ];
 
     for (const s of screensToLoad) {
-        const response = await fetch(s.file);
+        const response = await fetch(s.file, { cache: "no-store" });
         if (!response.ok) throw new Error(`Failed to load screen template: ${s.file}`);
         const html = await response.text();
         // Find settings-modal and insert screens before it to maintain container structure
@@ -41,6 +41,13 @@ function saveSettings() {
 
 // Screen navigation helper
 function showScreen(screenKey) {
+    // Ignore stale reconnect/lobby callbacks once the match is finishing.
+    // resetGameStates() clears this lock before an intentional replay.
+    if (screenKey === "lobby" && typeof isGameEnding !== "undefined" && isGameEnding) {
+        console.debug("Ignored lobby navigation while final results are active.");
+        return;
+    }
+
     Object.keys(screens).forEach(key => {
         if (screens[key]) {
             if(key === screenKey) {

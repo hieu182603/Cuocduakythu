@@ -146,10 +146,16 @@ function openQuestionsPool() {
 function resetGameStates() {
     players = [];
     activePlayerIndex = 0;
+    isGameEnding = false;
 }
 
 // GAMEPLAY LOGIC
 function startGame() {
+    if (questions.length === 0) {
+        showNotification("Chưa tải được câu hỏi từ database. Không thể bắt đầu cuộc đua.", "error");
+        return;
+    }
+
     resetGameStates();
     const count = parseInt(document.getElementById("player-count-display").innerText);
     const storedNames = [];

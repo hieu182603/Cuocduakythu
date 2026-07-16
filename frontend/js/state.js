@@ -14,6 +14,7 @@ let roomCode = "";
 let connection = null;
 let myPlayerId = -1; // -1: spectator, otherwise player index
 let gameTimerInterval = null;
+let isGameEnding = false;
 let isMovementAnimating = false;
 let onlineMovementQueue = [];
 let isOnlineMovementQueueRunning = false;

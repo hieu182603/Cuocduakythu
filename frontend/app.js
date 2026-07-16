@@ -60,20 +60,43 @@ function safeAddListener(id, event, handler) {
 }
 
 function initApp() {
-    // 1. Load Questions
-    fetch("questions.json")
-        .then(res => res.json())
-        .then(data => {
-            questions = data;
+    // 1. Load questions progressively instead of blocking on the full database.
+    const loadQuestionBatches = async () => {
+        const batchSize = 40;
+        let skip = 0;
+        questions = [];
+
+        try {
+            while (true) {
+                const res = await fetch(`${APP_CONFIG.API_BASE}/api/questions?skip=${skip}&take=${batchSize}`);
+                if (!res.ok) throw new Error(`Questions API returned ${res.status}`);
+                const data = await res.json();
+                const mappedBatch = data.map(q => {
+                const orderedOptions = [...(q.options || [])]
+                    .sort((a, b) => a.optionLetter.localeCompare(b.optionLetter));
+                return {
+                    id: q.id,
+                    question: q.questionText,
+                    answers: orderedOptions.map(o => o.optionText)
+                };
+                }).filter(q => q.id && q.question && q.answers.length >= 2);
+
+                questions.push(...mappedBatch);
+                const qCount = document.getElementById("qpool-count");
+                if (qCount) qCount.innerText = questions.length;
+
+                if (data.length < batchSize) break;
+                skip += batchSize;
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+        } catch (err) {
+            console.error("Could not load questions from database API.", err);
             const qCount = document.getElementById("qpool-count");
-            if (qCount) qCount.innerText = questions.length;
-        })
-        .catch(err => {
-            console.warn("Could not load questions.json, using fallback database.", err);
-            questions = EMBEDDED_QUESTIONS;
-            const qCount = document.getElementById("qpool-count");
-            if (qCount) qCount.innerText = questions.length;
-        });
+            if (qCount) qCount.innerText = String(questions.length);
+            if (questions.length === 0) showNotification("Không thể tải câu hỏi từ database.", "error");
+        }
+    };
+    loadQuestionBatches();
 
     // 2. Setup Screen Transitions
     setTimeout(() => {
@@ -367,15 +390,30 @@ function initApp() {
         });
     });
 
-    safeAddListener("btn-start-game", "click", () => {
+    safeAddListener("btn-start-game", "click", async () => {
         if (isOnlineMode) {
+            const startButton = document.getElementById("btn-start-game");
+            if (!startButton || startButton.disabled) return;
+            const originalLabel = startButton.innerHTML;
+            startButton.disabled = true;
+            startButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Đang tải câu hỏi...';
+
             const specChk = document.getElementById("chk-host-spectate");
             const isSpectator = specChk ? specChk.checked : false;
             const durInput = document.getElementById("input-game-duration");
             const durationVal = durInput ? parseInt(durInput.value) : 10;
             const durationMinutes = isNaN(durationVal) || durationVal <= 0 ? 10 : durationVal;
-            connection.invoke("StartGame", roomCode, isSpectator, durationMinutes)
-                .catch(err => console.error("Error starting game: ", err));
+            try {
+                await connection.invoke("StartGame", roomCode, isSpectator, durationMinutes);
+            } catch (err) {
+                console.error("Error starting game: ", err);
+                showNotification(err?.message || "Không thể bắt đầu cuộc đua.", "error");
+            } finally {
+                if (screens.lobby?.classList.contains("active")) {
+                    startButton.disabled = false;
+                    startButton.innerHTML = originalLabel;
+                }
+            }
         } else {
             startGame();
         }

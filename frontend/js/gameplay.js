@@ -778,7 +778,7 @@ window.checkPostPopupState = function() {
                 if (me.isAutoRoll) {
                     me.isAutoRoll = false;
                     info.innerText = "Tự động tung xúc xắc...";
-                    setTimeout(() => btn.click(), 500);
+                    setTimeout(() => handleRollDice(true), 500);
                 } else {
                     btn.disabled = false;
                     info.innerText = "Hãy tiếp tục tung xúc xắc!";
@@ -791,7 +791,7 @@ window.checkPostPopupState = function() {
         me.isAutoRoll = false;
         btn.disabled = true;
         info.innerText = "Tự động tung xúc xắc...";
-        setTimeout(() => btn.click(), 1000);
+        setTimeout(() => handleRollDice(true), 1000);
     } else {
         btn.disabled = false;
         info.innerText = "Hãy tiếp tục tung xúc xắc!";
@@ -799,11 +799,19 @@ window.checkPostPopupState = function() {
 };
 
 // Rolling Dice physics & state triggers
-function handleRollDice() {
-    document.getElementById("btn-roll-dice").disabled = true;
+function handleRollDice(forceAutoRoll = false) {
+    const isForcedAutoRoll = forceAutoRoll === true;
+    const rollButton = document.getElementById("btn-roll-dice");
+    if (!rollButton || (rollButton.disabled && !isForcedAutoRoll)) return;
+    rollButton.disabled = true;
     if (isOnlineMode) {
         connection.invoke("RollDice", roomCode)
-            .catch(err => console.error("Error rolling dice: ", err));
+            .catch(err => {
+                console.error("Error rolling dice: ", err);
+                const hasOpenEvent = document.querySelector(".event-modal.active, #question-modal.active, #trap-modal.active, #reward-modal.active, #wheel-modal.active");
+                if (!hasOpenEvent && !isGameEnding) rollButton.disabled = false;
+                showNotification(err?.message || "Chưa thể tung xúc xắc. Hãy thử lại.", "error");
+            });
         return;
     }
     const player = players[activePlayerIndex];
@@ -902,6 +910,15 @@ function resetOnlineMovementQueue() {
 function queueOnlineMovement(movement) {
     onlineMovementQueue.push({ type: "movement", ...movement });
     processOnlineMovementQueue();
+}
+
+function syncRemotePlayerMovement(playerId, targetTileIndex, lapCount) {
+    const player = players.find(p => p.id === playerId);
+    if (!player) return;
+    player.tileIndex = targetTileIndex;
+    player.lapCount = lapCount;
+    updatePlayerPositionsOnBoard();
+    renderScoreboard();
 }
 
 function queueOnlineCallback(callback) {
@@ -1134,15 +1151,19 @@ function triggerQuestionEvent(player) {
     modal.classList.add("active");
 
     // Khởi chạy đếm ngược 15 giây (Offline)
-    startQuestionTimer(15, () => {
+    startQuestionTimer(15, async () => {
         logMessage(`[${player.name}] đã HẾT GIỜ trả lời câu hỏi!`, "log-trap");
         
         // Disable all buttons
         const allButtons = document.querySelectorAll(".answer-btn");
         allButtons.forEach(btn => btn.disabled = true);
         
-        // Show correct button
-        allButtons[currentQuestion.correct].classList.add("correct");
+        try {
+            const result = await verifyOfflineAnswer(-1);
+            if (allButtons[result.correctIndex]) allButtons[result.correctIndex].classList.add("correct");
+        } catch (error) {
+            console.error("Could not reveal timed-out answer:", error);
+        }
         
         player.wrongStreak++;
         
@@ -1173,7 +1194,17 @@ function triggerQuestionEvent(player) {
     });
 }
 
-function handleAnswerSelected(selectedBtn, answerIndex) {
+async function verifyOfflineAnswer(answerIndex) {
+    const response = await fetch(`${APP_CONFIG.API_BASE}/api/questions/${currentQuestion.id}/answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answerIndex })
+    });
+    if (!response.ok) throw new Error(`Answer API returned ${response.status}`);
+    return response.json();
+}
+
+async function handleAnswerSelected(selectedBtn, answerIndex) {
     stopQuestionTimer(); // Dừng đếm ngược ngay lập tức
     const player = players[activePlayerIndex];
     const allButtons = document.querySelectorAll(".answer-btn");
@@ -1181,7 +1212,17 @@ function handleAnswerSelected(selectedBtn, answerIndex) {
     // Disable all buttons to prevent double click
     allButtons.forEach(btn => btn.disabled = true);
 
-    const isCorrect = answerIndex === currentQuestion.correct;
+    let answerResult;
+    try {
+        answerResult = await verifyOfflineAnswer(answerIndex);
+    } catch (error) {
+        console.error("Could not validate answer:", error);
+        showNotification("Không thể kiểm tra đáp án từ server.", "error");
+        allButtons.forEach(btn => btn.disabled = false);
+        startQuestionTimer(5, () => handleAnswerSelected(selectedBtn, -1));
+        return;
+    }
+    const isCorrect = answerResult.isCorrect;
     
     if (isCorrect) {
         selectedBtn.classList.add("correct");
@@ -1198,7 +1239,7 @@ function handleAnswerSelected(selectedBtn, answerIndex) {
         playSFX('fail');
         
         // Show correct button
-        allButtons[currentQuestion.correct].classList.add("correct");
+        if (allButtons[answerResult.correctIndex]) allButtons[answerResult.correctIndex].classList.add("correct");
         
         player.wrongStreak++;
         
@@ -1775,6 +1816,7 @@ function startGameTimer(durationMinutes) {
         if (remainingSeconds <= 0) {
             clearInterval(gameTimerInterval);
             timerText.innerText = "Hết giờ!";
+            isGameEnding = true;
             if (isHost && isOnlineMode && connection) {
                 connection.invoke("EndGameDueToTimeout", roomCode);
             }
@@ -1842,7 +1884,7 @@ function triggerVictory(winner) {
                 <div class="podium-step">
                     <span class="podium-rank">${rank}</span>
                     <div class="podium-stats">
-                        <span class="stat-flags"><i class="fa-solid fa-flag-checkered"></i> ${player.lapCount || 0}/5</span>
+                        <span class="stat-flags"><i class="fa-solid fa-flag-checkered"></i> ${player.lapCount || 0} vòng</span>
                         <span class="stat-stars"><i class="fa-solid fa-star"></i> ${(player.tileIndex || 0)}</span>
                     </div>
                 </div>

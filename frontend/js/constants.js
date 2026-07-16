@@ -44,12 +44,3 @@ const TILE_COORDS = Array.from({ length: 41 }, (_, idx) => {
         isCorner: idx === 6 || idx === 21 || idx === 28
     };
 });
-
-// Fallback questions database if JSON file is missing
-const EMBEDDED_QUESTIONS = [
-    { "question": "Thủ đô của Việt Nam là thành phố nào?", "answers": ["TP. Hồ Chí Minh", "Đà Nẵng", "Hà Nội", "Hải Phòng"], "correct": 2 },
-    { "question": "Trái Đất tự quay quanh trục mất bao lâu?", "answers": ["12 giờ", "24 giờ", "365 ngày", "30 ngày"], "correct": 1 },
-    { "question": "Số nguyên tố nhỏ nhất là số nào?", "answers": ["0", "1", "2", "3"], "correct": 2 },
-    { "question": "Kim loại nào dẫn điện tốt nhất ở điều kiện thường?", "answers": ["Vàng", "Đồng", "Bạc", "Nhôm"], "correct": 2 },
-    { "question": "Đất nước mặt trời mọc là quốc gia nào?", "answers": ["Hàn Quốc", "Trung Quốc", "Việt Nam", "Nhật Bản"], "correct": 3 }
-];
