@@ -12,8 +12,8 @@ const APP_CONFIG = (() => {
     if (isLocal) {
         return {
             // Khi chạy local dev
-            SIGNALR_URL: `http://${hostname}:5089/gameHub`,
-            API_BASE: `http://${hostname}:5089`,
+            SIGNALR_URL: `http://${hostname}:5090/gameHub`,
+            API_BASE: `http://${hostname}:5090`,
         };
     }
 
@@ -21,7 +21,7 @@ const APP_CONFIG = (() => {
     // 🔴 THAY ĐỔI URL NÀY THÀNH DOMAIN/IP CỦA VPS CỦA BẠN
     // Ví dụ: "https://api.cuocduakythu.com" hoặc "http://123.45.67.89:5089"
     // ====================================================================
-    const VPS_BACKEND_URL = "https://160.187.229.201.nip.io";
+    const VPS_BACKEND_URL = "https://game.160.187.229.201.nip.io";
 
     return {
         SIGNALR_URL: `${VPS_BACKEND_URL}/gameHub`,
