@@ -103,3 +103,25 @@ Bản Web Client được viết bằng HTML/CSS/JS thuần, không cần biên 
 ## ✨ Tính Năng Đặc Biệt Đã Hoàn Thiện
 - **Chống bấm nhầm tải lại trang (F5/Reload)**: Khi người chơi đang trong trận đấu hoặc phòng chờ, nếu vô tình bấm F5, reload trang hoặc đóng tab, trình duyệt sẽ hiển thị hộp thoại cảnh báo để tránh việc vô tình thoát trận và mất tiến trình.
 - **Lưu cấu hình thông minh**: Tự động lưu thiết lập âm thanh (Music/SFX), hiệu ứng nguyên tố (VFX), tốc độ di chuyển và tên của người chơi đã nhập ở lượt chơi trước vào `localStorage` tiện lợi.
+## Current Runtime and Deployment Notes
+
+The backend targets .NET 8 and the board contains 41 tiles. Local configuration is read from `.env` with `DotNetEnv.Env.NoClobber().TraversePath().Load()`, so real environment variables keep priority over the local file. Never commit `.env`; use `.env.example` as the template.
+
+Use the exact SDK executable on this machine when needed:
+
+```powershell
+& 'C:\Users\os\AppData\Local\Microsoft\dotnet\dotnet.exe' restore Backend/Backend.csproj
+& 'C:\Users\os\AppData\Local\Microsoft\dotnet\dotnet.exe' build Backend/Backend.csproj
+& 'C:\Users\os\AppData\Local\Microsoft\dotnet\dotnet.exe' test Backend.Tests/Backend.Tests.csproj
+```
+
+Render is configured by `render.yaml` for the Singapore Docker service. Set `ConnectionStrings__DefaultConnection` in the Render dashboard; `CORS_ORIGINS` points at the Vercel frontend. The process check is `/health`, while `/ready` checks Supabase connectivity.
+
+Online uses SignalR at `https://cuocduakythu-chi-backend-hieu182603.onrender.com/gameHub`. Offline question loading is lazy and starts only after selecting offline mode. The game keeps the simultaneous 41-tile race and supports up to 50 players per room.
+
+Verification commands:
+
+```powershell
+Get-ChildItem frontend -Recurse -Filter *.js | ForEach-Object { & node --check $_.FullName }
+docker build -t cuocduakythu-backend ./Backend
+```

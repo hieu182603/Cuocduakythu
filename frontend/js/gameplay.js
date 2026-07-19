@@ -400,15 +400,10 @@ function renderBoard() {
 
 const OFFS = [[-1,-1],[1,-1],[-1,1],[1,1]];
 
-function placeToken(p, tokenEl, racersList) {
-    const board = document.getElementById("board");
-    const tile = document.getElementById(`tile-${p.tileIndex}`);
-    if (!tile || !tokenEl || !board) return;
-
-    const boardRect = board.getBoundingClientRect();
-    const tileRect = tile.getBoundingClientRect();
-    const occupants = racersList.filter(other => other.tileIndex === p.tileIndex);
-    const slot = occupants.indexOf(p);
+function placeToken(p, tokenEl, slot, layout) {
+    const tileRect = layout.tileRects.get(p.tileIndex);
+    if (!tileRect || !tokenEl) return;
+    const boardRect = layout.boardRect;
 
     // Make sure all tokens use uniform CSS default size
     tokenEl.style.removeProperty('--token-size');
@@ -441,6 +436,19 @@ function updatePlayerPositionsOnBoard() {
     if (!board) return;
 
     const racers = players.filter(p => !p.isSpectator);
+    const layout = {
+        boardRect: board.getBoundingClientRect(),
+        tileRects: new Map()
+    };
+    const occupantsByTile = new Map();
+    racers.forEach(player => {
+        if (!layout.tileRects.has(player.tileIndex)) {
+            const tile = document.getElementById(`tile-${player.tileIndex}`);
+            if (tile) layout.tileRects.set(player.tileIndex, tile.getBoundingClientRect());
+        }
+        if (!occupantsByTile.has(player.tileIndex)) occupantsByTile.set(player.tileIndex, []);
+        occupantsByTile.get(player.tileIndex).push(player);
+    });
 
     racers.forEach((p, i) => {
         let token = document.getElementById(`player-token-${p.id}`);
@@ -451,11 +459,15 @@ function updatePlayerPositionsOnBoard() {
             token.id = `player-token-${p.id}`;
             
             const imgPath = p.character.image || `assets/characters/locphat.png`;
-            token.innerHTML = `<img src="${imgPath}" alt="${p.name}"><b style="background:${p.character.color}">${i+1}</b>`;
+            token.innerHTML = `<img src="${imgPath}" alt=""><b>${i+1}</b>`;
+            const tokenImage = token.querySelector("img");
+            const tokenBadge = token.querySelector("b");
+            tokenImage.alt = p.name;
+            tokenBadge.style.backgroundColor = p.character.color;
             board.appendChild(token);
         }
 
-        placeToken(p, token, racers);
+        placeToken(p, token, occupantsByTile.get(p.tileIndex).indexOf(p), layout);
     });
 
     const allTokens = board.querySelectorAll(".token");
@@ -594,10 +606,9 @@ document.addEventListener('click', () => {
     }
 }, { once: true });
 
-function renderScoreboard() {
+function renderScoreboardNow() {
     const list = document.getElementById("scoreboard-list");
     if (!list) return;
-    list.innerHTML = "";
 
     // Sort players by position (lapCount descending, then tileIndex descending, filter out spectators and players who haven't completed a lap yet)
     const sorted = [...players]
@@ -609,6 +620,11 @@ function renderScoreboard() {
             return b.tileIndex - a.tileIndex;
         })
         .slice(0, 10);
+
+    const signature = sorted.map(p => [p.id, p.name, p.horseId, p.lapCount, p.tileIndex, p.shield, p.doubleDice].join(":" )).join("|");
+    if (signature === scoreboardSignature) return;
+    scoreboardSignature = signature;
+    list.innerHTML = "";
 
     sorted.forEach((p, index) => {
         const row = document.createElement("div");
@@ -624,7 +640,7 @@ function renderScoreboard() {
                     ${characterImageMarkup(p.character, "sb-char-image")}
                 </div>
                 <div class="sb-details">
-                    <span class="sb-name">${p.name} ${statusBadges}</span>
+                    <span class="sb-name">${escapeHTML(p.name)} ${statusBadges}</span>
                     <span class="sb-char">${p.character.name}</span>
                 </div>
             </div>
@@ -634,6 +650,19 @@ function renderScoreboard() {
         `;
         list.appendChild(row);
     });
+}
+
+let scoreboardSignature = "";
+let scoreboardFrame = 0;
+let scoreboardLastPaint = 0;
+function renderScoreboard() {
+    if (scoreboardFrame) return;
+    const delay = Math.max(0, 100 - (performance.now() - scoreboardLastPaint));
+    scoreboardFrame = setTimeout(() => {
+        scoreboardFrame = 0;
+        scoreboardLastPaint = performance.now();
+        renderScoreboardNow();
+    }, delay);
 }
 
 // Setup Turn State
@@ -756,6 +785,18 @@ window.checkPostPopupState = function() {
 
     const btn = document.getElementById("btn-roll-dice");
     const info = document.getElementById("center-interactive-info");
+
+    const serverAcknowledged = arguments[0] === true;
+    if (isOnlineMode && connection && connection.state === "Connected" && !serverAcknowledged) {
+        btn.disabled = true;
+        connection.invoke("CloseModal", roomCode)
+            .then(() => window.checkPostPopupState(true))
+            .catch(error => {
+                console.warn("Popup acknowledgement failed", error);
+                info.innerText = "Đang đồng bộ trạng thái...";
+            });
+        return;
+    }
     
     // Clear any previous freeze interval
     if (window.freezeInterval) {
@@ -1143,7 +1184,7 @@ function triggerQuestionEvent(player) {
     currentQuestion.answers.forEach((ans, idx) => {
         const btn = document.createElement("button");
         btn.className = "answer-btn";
-        btn.innerHTML = `${String.fromCharCode(65 + idx)}. ${ans}`;
+        btn.textContent = `${String.fromCharCode(65 + idx)}. ${ans}`;
         btn.addEventListener("click", () => handleAnswerSelected(btn, idx));
         answersGrid.appendChild(btn);
     });
@@ -1340,8 +1381,8 @@ function triggerTrapEvent(player) {
             </div>
             <div class="card-front">
                 <div class="card-front-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                <div class="effect-name">${choice.name}</div>
-                <div class="effect-detail">${choice.detail}</div>
+                <div class="effect-name">${escapeHTML(choice.name)}</div>
+                <div class="effect-detail">${escapeHTML(choice.detail)}</div>
             </div>
         `;
 
@@ -1375,8 +1416,8 @@ function triggerTrapEvent(player) {
                 document.getElementById("trap-modal-desc").innerText = "Chi tiết bẫy kích hoạt:";
                 document.getElementById("trap-result-box").style.display = "block";
                 document.getElementById("trap-result-box").innerHTML = `
-                    <div class="effect-name">${trap.name}</div>
-                    <div class="effect-detail">${trap.detail}</div>
+                    <div class="effect-name">${escapeHTML(trap.name)}</div>
+                    <div class="effect-detail">${escapeHTML(trap.detail)}</div>
                 `;
                 document.getElementById("btn-close-trap-modal").style.display = "inline-flex";
                 document.getElementById("btn-close-trap-modal").onclick = () => {
@@ -1460,8 +1501,8 @@ function triggerRewardEvent(player) {
             </div>
             <div class="card-front">
                 <div class="card-front-icon"><i class="fa-solid fa-circle-check"></i></div>
-                <div class="effect-name">${choice.name}</div>
-                <div class="effect-detail">${choice.detail}</div>
+                <div class="effect-name">${escapeHTML(choice.name)}</div>
+                <div class="effect-detail">${escapeHTML(choice.detail)}</div>
             </div>
         `;
 
@@ -1495,8 +1536,8 @@ function triggerRewardEvent(player) {
                 document.getElementById("reward-modal-desc").innerText = "Chi tiết phần thưởng:";
                 document.getElementById("reward-result-box").style.display = "block";
                 document.getElementById("reward-result-box").innerHTML = `
-                    <div class="effect-name">${reward.name}</div>
-                    <div class="effect-detail">${reward.detail}</div>
+                    <div class="effect-name">${escapeHTML(reward.name)}</div>
+                    <div class="effect-detail">${escapeHTML(reward.detail)}</div>
                 `;
                 document.getElementById("btn-close-reward-modal").style.display = "inline-flex";
                 document.getElementById("btn-close-reward-modal").onclick = () => {
@@ -1787,13 +1828,16 @@ function applyWheelResult(player, sector) {
     }, 2000);
 }
 
-function startGameTimer(durationMinutes) {
+function startGameTimer(durationMinutes, absoluteEndTime = null) {
     if (gameTimerInterval) clearInterval(gameTimerInterval);
     
     const timerText = document.getElementById("lblTotalTime") || document.getElementById("game-time-remaining");
     if (!timerText) return;
     
-    let remainingSeconds = durationMinutes * 60;
+    const endTime = absoluteEndTime
+        ? Date.parse(absoluteEndTime)
+        : Date.now() + durationMinutes * 60 * 1000;
+    let remainingSeconds = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
     
     function updateDisplay() {
         const minutes = Math.floor(remainingSeconds / 60);
@@ -1812,7 +1856,7 @@ function startGameTimer(durationMinutes) {
     updateDisplay();
     
     gameTimerInterval = setInterval(() => {
-        remainingSeconds--;
+        remainingSeconds = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
         if (remainingSeconds <= 0) {
             clearInterval(gameTimerInterval);
             timerText.innerText = "Hết giờ!";
@@ -1928,9 +1972,13 @@ function logMessage(text, className = "") {
     const now = new Date();
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
     
-    item.innerHTML = `<small style="color:var(--text-secondary); margin-right:5px;">[${timeStr}]</small>${text}`;
+    const timestamp = document.createElement("small");
+    timestamp.style.cssText = "color:var(--text-secondary); margin-right:5px;";
+    timestamp.textContent = `[${timeStr}]`;
+    item.append(timestamp, document.createTextNode(String(text ?? "")));
     
     logs.appendChild(item);
+    while (logs.children.length > 200) logs.removeChild(logs.firstElementChild);
     
     // Scroll logs to bottom
     logs.scrollTop = logs.scrollHeight;

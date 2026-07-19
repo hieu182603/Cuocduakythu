@@ -19,7 +19,7 @@ namespace Backend.Services
         bool CheckVictory(Player player);
 
         // ── Questions ──
-        McqQuestion? GetRandomQuestion(GameRoom room);
+        McqQuestion? GetRandomQuestion();
         (bool isCorrect, string penaltyText) ProcessAnswer(Player player, McqQuestion question, int answerIndex);
 
         // ── Traps ──

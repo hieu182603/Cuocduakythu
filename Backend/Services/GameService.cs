@@ -4,7 +4,12 @@ namespace Backend.Services
 {
     public class GameService : IGameService
     {
-        private readonly Random _random = new();
+        private readonly IQuestionBank _questionBank;
+
+        public GameService(IQuestionBank questionBank)
+        {
+            _questionBank = questionBank;
+        }
 
         // ── Board Layout (41 tiles) ──
         private static readonly string[] TileTypes =
@@ -99,7 +104,7 @@ namespace Backend.Services
 
         public (int rollVal1, int rollVal2, int totalMove) CalculateDiceRoll(Player player)
         {
-            int rollVal1 = _random.Next(1, 7); // 1–6
+            int rollVal1 = Random.Shared.Next(1, 7); // 1–6
             int rollVal2 = 0; // Only 1 dice
 
             if (player.DiceModifier > 0)
@@ -155,15 +160,7 @@ namespace Backend.Services
         // QUESTIONS
         // ════════════════════════════════════════
 
-        public McqQuestion? GetRandomQuestion(GameRoom room)
-        {
-            lock (room.SyncRoot)
-            {
-                if (room.CachedQuestions.Count == 0) return null;
-                int idx = _random.Next(room.CachedQuestions.Count);
-                return room.CachedQuestions[idx];
-            }
-        }
+        public McqQuestion? GetRandomQuestion() => _questionBank.GetRandom();
 
         public (bool isCorrect, string penaltyText) ProcessAnswer(Player player, McqQuestion question, int answerIndex)
         {
@@ -195,10 +192,10 @@ namespace Backend.Services
         public (string name, string detail, string movementDirection, int movementSteps) ApplyTrap(Player player)
         {
             int previousTileIndex = player.TileIndex;
-            int trapIdx = _random.Next(Traps.Length);
+            int trapIdx = Random.Shared.Next(Traps.Length);
 
             // Reduce rare "quay-start" (index 5) chance to ~15%
-            if (trapIdx == 5 && _random.NextDouble() > 0.15)
+            if (trapIdx == 5 && Random.Shared.NextDouble() > 0.15)
             {
                 trapIdx = 0; // fallback to "lùi 2"
             }
@@ -248,7 +245,7 @@ namespace Backend.Services
         public (string name, string detail, bool isAutoRoll, string movementDirection, int movementSteps) ApplyReward(Player player)
         {
             int previousTileIndex = player.TileIndex;
-            int rewardIdx = _random.Next(Rewards.Length);
+            int rewardIdx = Random.Shared.Next(Rewards.Length);
             var (name, detail) = Rewards[rewardIdx];
             bool isAutoRoll = false;
 
@@ -296,7 +293,7 @@ namespace Backend.Services
         public (int sectorIndex, string label, string desc, bool isReward, string movementDirection, int movementSteps) SpinWheel(Player player)
         {
             int previousTileIndex = player.TileIndex;
-            int idx = _random.Next(WheelSectors.Length);
+            int idx = Random.Shared.Next(WheelSectors.Length);
             var (label, desc, isReward) = WheelSectors[idx];
 
             switch (idx)
@@ -343,7 +340,7 @@ namespace Backend.Services
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
             return new string(Enumerable.Repeat(chars, 5)
-                .Select(s => s[_random.Next(s.Length)]).ToArray());
+                .Select(s => s[Random.Shared.Next(s.Length)]).ToArray());
         }
     }
 }

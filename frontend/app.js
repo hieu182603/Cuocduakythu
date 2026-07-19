@@ -25,9 +25,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 const btn = target.closest("button");
                 if (btn) {
                     if (btn.id === "btn-play-again") {
-                        resetGameStates();
-                        showScreen("lobby");
+                        if (isOnlineMode && connection && isHost && connection.state === "Connected") {
+                            connection.invoke("ResetGame", roomCode).catch(error => showNotification(error.message || "Không thể chơi lại trận này.", "error"));
+                        } else {
+                            resetGameStates();
+                            showScreen("lobby");
+                        }
                     } else if (btn.id === "btn-victory-home") {
+                        if (isOnlineMode && connection && roomCode && connection.state === "Connected") {
+                            connection.invoke("LeaveRoom", roomCode).catch(console.warn);
+                            localStorage.removeItem("saved_room_code");
+                            isOnlineMode = false;
+                        }
                         showScreen("menu");
                     }
                 }
@@ -57,6 +66,44 @@ function safeAddListener(id, event, handler) {
     } else {
         console.warn(`[SafeListener] Element #${id} not found, skipping event listener.`);
     }
+}
+
+let offlineQuestionsPromise = null;
+
+function ensureOfflineQuestionsLoaded() {
+    if (questions.length > 0) return Promise.resolve(questions);
+    if (offlineQuestionsPromise) return offlineQuestionsPromise;
+
+    offlineQuestionsPromise = (async () => {
+        const batchSize = 100;
+        let skip = 0;
+        const loaded = [];
+        while (true) {
+            const response = await fetch(`${APP_CONFIG.API_BASE}/api/questions?skip=${skip}&take=${batchSize}`);
+            if (!response.ok) throw new Error(`Questions API returned ${response.status}`);
+            const data = await response.json();
+            loaded.push(...data.map(q => ({
+                id: q.id,
+                question: q.questionText,
+                answers: [...(q.options || [])]
+                    .sort((a, b) => a.optionLetter.localeCompare(b.optionLetter))
+                    .map(option => option.optionText)
+            })).filter(q => q.id && q.question && q.answers.length >= 2));
+            if (data.length < batchSize) break;
+            skip += batchSize;
+        }
+        if (loaded.length === 0) throw new Error("No offline questions available");
+        questions = loaded;
+        const qCount = document.getElementById("qpool-count");
+        if (qCount) qCount.textContent = String(questions.length);
+        return questions;
+    })().catch(error => {
+        offlineQuestionsPromise = null;
+        showNotification("Không thể tải câu hỏi cho chế độ offline.", "error");
+        throw error;
+    });
+
+    return offlineQuestionsPromise;
 }
 
 function initApp() {
@@ -96,7 +143,8 @@ function initApp() {
             if (questions.length === 0) showNotification("Không thể tải câu hỏi từ database.", "error");
         }
     };
-    loadQuestionBatches();
+    // Online games receive questions from SignalR. Offline loading starts only
+    // after the player explicitly chooses the offline mode.
 
     // 2. Setup Screen Transitions
     setTimeout(() => {
@@ -107,6 +155,7 @@ function initApp() {
     if (btnPlay) {
         btnPlay.addEventListener("click", () => {
             isOnlineMode = false;
+            void ensureOfflineQuestionsLoaded();
             const onlinePanel = document.getElementById("lobby-online-panel");
             if (onlinePanel) onlinePanel.style.display = "none";
             const setupPanel = document.getElementById("lobby-setup-panel");
@@ -322,7 +371,7 @@ function initApp() {
             showConfirm("Bạn có chắc chắn muốn rời phòng chờ?", () => {
                 localStorage.removeItem("saved_room_code");
                 if (connection.state === "Connected") {
-                    connection.stop().then(() => {
+                    connection.invoke("LeaveRoom", roomCode).then(() => {
                         isOnlineMode = false;
                         showScreen("menu");
                     }).catch(err => {
@@ -415,6 +464,7 @@ function initApp() {
                 }
             }
         } else {
+            await ensureOfflineQuestionsLoaded();
             startGame();
         }
     });
@@ -424,8 +474,14 @@ function initApp() {
     safeAddListener("btn-quit-game", "click", () => {
         showConfirm("Bạn có chắc muốn thoát ván chơi này? Tiến trình chơi sẽ bị mất.", () => {
             if (isOnlineMode && connection) {
-                localStorage.removeItem("saved_room_code");
-                window.location.reload();
+                const leave = connection.state === "Connected"
+                    ? connection.invoke("LeaveRoom", roomCode)
+                    : Promise.resolve();
+                leave.finally(() => {
+                    localStorage.removeItem("saved_room_code");
+                    isOnlineMode = false;
+                    showScreen("menu");
+                });
             } else {
                 showScreen("menu");
             }

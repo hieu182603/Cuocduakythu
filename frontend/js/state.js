@@ -7,6 +7,15 @@ let musicVol = 50;
 let sfxVol = 70;
 let vfxEnabled = true;
 
+function escapeHTML(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
 // Online Multiplayer state
 let isOnlineMode = false;
 let isHost = false;

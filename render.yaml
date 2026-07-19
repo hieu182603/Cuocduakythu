@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cuocduakythu-backend
+    env: docker
+    dockerContext: .
+    dockerfilePath: ./Backend/Dockerfile
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: ConnectionStrings__DefaultConnection
+        sync: false # Bạn sẽ tự điền chuỗi kết nối MongoDB trên giao diện Render
+      - key: CORS_ORIGINS
+        sync: false # Bạn sẽ tự điền domain frontend trên giao diện Render (vd: https://your-vercel-app.vercel.app)
+      - key: PORT
+        value: "10000"

@@ -2,6 +2,55 @@
 // SIGNALR MULTIPLAYER INTEGRATION & BROADCASTS
 // ==================================================
 
+let signalRRestartTimer = null;
+const pendingRemotePlayerUpdates = new Map();
+let remotePlayerFrame = 0;
+
+function setGameplayConnectionState(isConnected) {
+    const rollButton = document.getElementById("btn-roll-dice");
+    if (rollButton && isOnlineMode && myPlayerId !== -1) rollButton.disabled = !isConnected;
+    document.body.classList.toggle("signalr-disconnected", !isConnected);
+}
+
+function startSignalRConnection() {
+    if (!connection || connection.state !== "Disconnected") return;
+    connection.start()
+        .then(() => {
+            setGameplayConnectionState(true);
+            const savedRoomCode = localStorage.getItem("saved_room_code");
+            if (savedRoomCode && sessionToken) {
+                return connection.invoke("RejoinRoom", savedRoomCode, sessionToken);
+            }
+        })
+        .catch(error => {
+            console.warn("SignalR connection failed; retrying.", error);
+            if (!signalRRestartTimer) {
+                signalRRestartTimer = setTimeout(() => {
+                    signalRRestartTimer = null;
+                    startSignalRConnection();
+                }, 2000 + Math.random() * 3000);
+            }
+        });
+}
+
+function queueRemotePlayerUpdate(playerId, targetTileIndex, lapCount) {
+    pendingRemotePlayerUpdates.set(playerId, { targetTileIndex, lapCount });
+    if (remotePlayerFrame) return;
+    remotePlayerFrame = requestAnimationFrame(() => {
+        remotePlayerFrame = 0;
+        pendingRemotePlayerUpdates.forEach((update, id) => {
+            const player = players.find(item => item.id === id);
+            if (player) {
+                player.tileIndex = update.targetTileIndex;
+                player.lapCount = update.lapCount;
+            }
+        });
+        pendingRemotePlayerUpdates.clear();
+        updatePlayerPositionsOnBoard();
+        renderScoreboard();
+    });
+}
+
 function initSignalR() {
     if (typeof signalR === "undefined") {
         console.warn("SignalR CDN is not loaded yet.");
@@ -9,15 +58,22 @@ function initSignalR() {
     }
     if (connection) {
         if (connection.state === "Disconnected") {
-            connection.start().catch(err => console.error("SignalR Reconnect failed: ", err));
+            startSignalRConnection();
         }
         return;
     }
 
     connection = new signalR.HubConnectionBuilder()
         .withUrl(APP_CONFIG.SIGNALR_URL)
-        .withAutomaticReconnect()
+        .withAutomaticReconnect({
+            nextRetryDelayInMilliseconds: retryContext => {
+                const base = Math.min(30000, 1000 * Math.pow(2, retryContext.previousRetryCount));
+                return Math.min(30000, base + Math.random() * 1000);
+            }
+        })
         .build();
+    connection.serverTimeoutInMilliseconds = 60000;
+    connection.keepAliveIntervalInMilliseconds = 15000;
 
     connection.on("Error", (message) => {
         showNotification(message, "error");
@@ -65,7 +121,7 @@ function initSignalR() {
         console.log("Player joined the lobby.");
     });
 
-    connection.on("GameStarted", (playersList, activeIdx, durationMinutes) => {
+    connection.on("GameStarted", (playersList, activeIdx, durationMinutes, gameEndTimeUtc) => {
         isGameEnding = false;
         players = playersList.map(p => {
             const char = CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[p.id % CHARACTER_DATABASE.length];
@@ -96,7 +152,7 @@ function initSignalR() {
         renderScoreboard();
         
         if (durationMinutes) {
-            startGameTimer(durationMinutes);
+            startGameTimer(durationMinutes, gameEndTimeUtc);
         } else {
             const timerCard = document.getElementById("game-timer-card");
             if (timerCard) timerCard.style.display = "none";
@@ -148,14 +204,16 @@ function initSignalR() {
         } else {
             // Do not let animations from dozens of remote players block this
             // client's personal dice/event queue.
-            syncRemotePlayerMovement(playerId, targetTileIndex, lapCount);
+            queueRemotePlayerUpdate(playerId, targetTileIndex, lapCount);
         }
     });
 
     connection.on("EnableRollDice", () => {
         queueOnlineCallback(() => {
             if (typeof window.checkPostPopupState === "function") {
-                window.checkPostPopupState();
+                // This event is emitted for a normal landing/start fallback,
+                // not as acknowledgement of a result modal.
+                window.checkPostPopupState(true);
             } else {
                 document.getElementById("btn-roll-dice").disabled = false;
             }
@@ -198,7 +256,7 @@ function initSignalR() {
             answersList.forEach((ans, idx) => {
                 const btn = document.createElement("button");
                 btn.className = "answer-btn";
-                btn.innerHTML = `${String.fromCharCode(65 + idx)}. ${ans}`;
+                btn.textContent = `${String.fromCharCode(65 + idx)}. ${ans}`;
                 
                 if (isActive) {
                     btn.addEventListener("click", () => {
@@ -229,7 +287,7 @@ function initSignalR() {
         }));
     });
 
-    connection.on("AnswerOutcome", (playerId, playerName, isCorrect, correctIndex, wrongStreak, penaltyText) => {
+    connection.on("AnswerOutcome", (playerId, playerName, isCorrect, correctIndex, wrongStreak, penaltyText, canAcknowledge) => {
         stopQuestionTimer();
         const allButtons = document.querySelectorAll(".answer-btn");
         allButtons.forEach(btn => btn.disabled = true);
@@ -256,7 +314,7 @@ function initSignalR() {
         setTimeout(() => {
             document.getElementById("question-modal").classList.remove("active");
             if (myPlayerId !== -1) {
-                if (typeof checkPostPopupState === "function") checkPostPopupState(); else document.getElementById("btn-roll-dice").disabled = false;
+                if (canAcknowledge && typeof checkPostPopupState === "function") checkPostPopupState(); else if (!canAcknowledge) document.getElementById("btn-roll-dice").disabled = true;
                 document.getElementById("center-interactive-info").innerText = "Hãy tiếp tục tung xúc xắc!";
             }
             // Resume the queue if the QuestionTriggered callback is waiting
@@ -310,8 +368,8 @@ function initSignalR() {
                     </div>
                     <div class="card-front">
                         <div class="card-front-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                        <div class="effect-name">${choice.name}</div>
-                        <div class="effect-detail">${choice.detail}</div>
+                        <div class="effect-name">${escapeHTML(choice.name)}</div>
+                        <div class="effect-detail">${escapeHTML(choice.detail)}</div>
                     </div>
                 `;
 
@@ -351,8 +409,8 @@ function initSignalR() {
                             document.getElementById("trap-modal-desc").innerText = "Chi tiết bẫy kích hoạt:";
                             document.getElementById("trap-result-box").style.display = "block";
                             document.getElementById("trap-result-box").innerHTML = `
-                                <div class="effect-name">${trapName}</div>
-                                <div class="effect-detail">${trapDetail}</div>
+                                <div class="effect-name">${escapeHTML(trapName)}</div>
+                                <div class="effect-detail">${escapeHTML(trapDetail)}</div>
                             `;
                             closeBtn.style.display = "inline-flex";
                             closeBtn.onclick = () => {
@@ -419,8 +477,8 @@ function initSignalR() {
                     </div>
                     <div class="card-front">
                         <div class="card-front-icon"><i class="fa-solid fa-circle-check"></i></div>
-                        <div class="effect-name">${choice.name}</div>
-                        <div class="effect-detail">${choice.detail}</div>
+                        <div class="effect-name">${escapeHTML(choice.name)}</div>
+                        <div class="effect-detail">${escapeHTML(choice.detail)}</div>
                     </div>
                 `;
 
@@ -462,8 +520,8 @@ function initSignalR() {
                             document.getElementById("reward-modal-desc").innerText = "Chi tiết phần thưởng:";
                             document.getElementById("reward-result-box").style.display = "block";
                             document.getElementById("reward-result-box").innerHTML = `
-                                <div class="effect-name">${rewardName}</div>
-                                <div class="effect-detail">${rewardDetail}</div>
+                                <div class="effect-name">${escapeHTML(rewardName)}</div>
+                                <div class="effect-detail">${escapeHTML(rewardDetail)}</div>
                             `;
                             closeBtn.style.display = "inline-flex";
                             closeBtn.onclick = () => {
@@ -501,7 +559,7 @@ function initSignalR() {
         
         document.getElementById("reward-result-box").innerHTML = `
             <div class="effect-name" style="color:var(--success);">KÍCH HOẠT LÁ CHẮN!</div>
-            <div class="effect-detail">Lá chắn của ${playerName} đã hóa giải hoàn toàn bẫy hiểm họa!</div>
+            <div class="effect-detail">Lá chắn của ${escapeHTML(playerName)} đã hóa giải hoàn toàn bẫy hiểm họa!</div>
         `;
         modal.classList.add("active");
 
@@ -588,7 +646,8 @@ function initSignalR() {
                 playSFX(isReward ? 'success' : 'fail');
                 
                 let resultText = document.getElementById("wheel-result-text");
-                resultText.innerHTML = `<span style="color:${isReward ? 'var(--success)' : 'var(--danger)'};">${label}</span><br><small>${desc}</small>`;
+                resultText.textContent = `${label}\n${desc}`;
+                resultText.style.whiteSpace = "pre-line";
                 resultText.style.display = "block";
                 
                 updatePlayerPositionsOnBoard();
@@ -651,6 +710,33 @@ function initSignalR() {
             localWinner.character = CHARACTER_DATABASE.find(c => c.id === localWinner.horseId) || CHARACTER_DATABASE[0];
         }
         triggerVictory(localWinner);
+    });
+
+    connection.on("GameReset", playersList => {
+        isGameEnding = false;
+        resetGameStates();
+        isOnlineMode = true;
+        players = playersList.map(p => ({
+            id: p.id,
+            connectionId: p.connectionId,
+            name: p.name,
+            character: CHARACTER_DATABASE.find(c => c.id === p.horseId) || CHARACTER_DATABASE[0],
+            tileIndex: 0,
+            wrongStreak: 0,
+            shield: false,
+            freezeTimeMs: 0,
+            doubleDice: false,
+            isAutoRoll: false,
+            diceModifier: 0,
+            lapCount: 0,
+            isSpectator: false
+        }));
+        const me = players.find(p => p.connectionId === connection.connectionId);
+        myPlayerId = me?.isSpectator ? -1 : (me?.id ?? -1);
+        isHost = Boolean(me?.isHost);
+        syncLobbyPlayers(playersList);
+        showScreen("lobby");
+        logMessage(isHost ? "Phòng đã sẵn sàng. Bạn có thể bắt đầu lại." : "Chủ phòng đang chuẩn bị chơi lại.", "log-reward");
     });
 
     connection.on("PlayerDisconnected", (playerName, playersList) => {
@@ -755,8 +841,8 @@ function initSignalR() {
                 if (centerInfo) centerInfo.innerText = "Bạn đang ở chế độ xem trận đấu.";
             }
             
-            if (roomState.gameDurationMinutes) {
-                startGameTimer(roomState.gameDurationMinutes);
+            if (roomState.gameDurationMinutes || roomState.gameEndTimeUtc) {
+                startGameTimer(roomState.gameDurationMinutes, roomState.gameEndTimeUtc);
             }
             
             // Ensure host controls are visible/hidden
@@ -797,31 +883,26 @@ function initSignalR() {
 
     connection.onreconnected((connectionId) => {
         console.log("SignalR reconnected. ConnectionId: " + connectionId);
+        setGameplayConnectionState(true);
         if (isOnlineMode && roomCode && sessionToken && !isGameEnding) {
             connection.invoke("RejoinRoom", roomCode, sessionToken)
                 .catch(err => console.error("Error rejoining room: ", err));
         }
     });
 
-    connection.start()
-        .then(() => {
-            console.log("Connected to SignalR GameHub successfully!");
-            logMessage("Đã thiết lập kết nối SignalR với máy chủ.", "log-reward");
-            
-            // Auto-rejoin if page was refreshed
-            const savedRoomCode = localStorage.getItem("saved_room_code");
-            if (savedRoomCode && sessionToken) {
-                connection.invoke("RejoinRoom", savedRoomCode, sessionToken)
-                    .catch(err => {
-                        console.warn("Auto-rejoin failed: ", err);
-                        localStorage.removeItem("saved_room_code");
-                    });
-            }
-        })
-        .catch(err => {
-            console.error("SignalR Connection Failed: ", err);
-            logMessage("Kết nối SignalR thất bại. Đang hoạt động ở chế độ Offline.", "log-trap");
-        });
+    connection.onreconnecting(error => {
+        setGameplayConnectionState(false);
+        logMessage("Mất kết nối máy chủ. Đang thử kết nối lại...", "log-trap");
+        console.warn("SignalR reconnecting", error);
+    });
+
+    connection.onclose(error => {
+        setGameplayConnectionState(false);
+        console.warn("SignalR closed", error);
+        startSignalRConnection();
+    });
+
+    startSignalRConnection();
 }
 
 function syncLobbyPlayers(playersList) {
@@ -873,7 +954,7 @@ function syncLobbyPlayers(playersList) {
 
         const inputId = `player-name-${idx}`;
         const existingInput = card.querySelector(`#${inputId}`);
-        const inputHtml = `<input type="text" id="${inputId}" value="${p.name}" ${isMe ? '' : 'disabled'} style="${isMe ? '' : 'background: rgba(0,0,0,0.15); border-color: transparent;'}">`;
+        const inputHtml = `<input type="text" id="${inputId}" ${isMe ? '' : 'disabled'} style="${isMe ? '' : 'background: rgba(0,0,0,0.15); border-color: transparent;'}">`;
 
         card.innerHTML = `
             <div class="player-card-num">Người chơi ${idx + 1} ${isMe ? '(Bạn)' : ''}</div>
@@ -898,6 +979,11 @@ function syncLobbyPlayers(playersList) {
             newInput.focus();
             const valLength = newInput.value.length;
             newInput.setSelectionRange(valLength, valLength);
+        }
+
+        const renderedInput = card.querySelector(`#${inputId}`);
+        if (renderedInput && (!existingInput || document.activeElement?.id !== inputId)) {
+            renderedInput.value = p.name;
         }
 
         if (isMe) {
@@ -962,8 +1048,8 @@ function triggerRewardEventForced(player, reward) {
             </div>
             <div class="card-front">
                 <div class="card-front-icon"><i class="fa-solid fa-circle-check"></i></div>
-                <div class="effect-name">${choice.name}</div>
-                <div class="effect-detail">${choice.detail}</div>
+                <div class="effect-name">${escapeHTML(choice.name)}</div>
+                <div class="effect-detail">${escapeHTML(choice.detail)}</div>
             </div>
         `;
 
@@ -996,8 +1082,8 @@ function triggerRewardEventForced(player, reward) {
                 document.getElementById("reward-modal-desc").innerText = "Chi tiết phần thưởng:";
                 document.getElementById("reward-result-box").style.display = "block";
                 document.getElementById("reward-result-box").innerHTML = `
-                    <div class="effect-name">${reward.name}</div>
-                    <div class="effect-detail">${reward.detail}</div>
+                    <div class="effect-name">${escapeHTML(reward.name)}</div>
+                    <div class="effect-detail">${escapeHTML(reward.detail)}</div>
                 `;
                 document.getElementById("btn-close-reward-modal").style.display = "inline-flex";
                 document.getElementById("btn-close-reward-modal").onclick = () => {

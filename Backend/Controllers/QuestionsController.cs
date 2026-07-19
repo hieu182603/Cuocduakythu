@@ -73,8 +73,8 @@ namespace Backend.Controllers
         }
 
         /// <summary>GET /api/questions/{id} — Single question by ID.</summary>
-        [HttpGet("{id:int}")]
-        public async Task<IActionResult> GetById(int id)
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById(string id)
         {
             var question = await _questionRepo.GetByIdAsync(id);
             if (question == null) return NotFound();
@@ -96,8 +96,8 @@ namespace Backend.Controllers
         public sealed record AnswerSubmission(int AnswerIndex);
 
         /// <summary>Validate one answer without exposing the answer key.</summary>
-        [HttpPost("{id:int}/answer")]
-        public async Task<IActionResult> CheckAnswer(int id, [FromBody] AnswerSubmission submission)
+        [HttpPost("{id}/answer")]
+        public async Task<IActionResult> CheckAnswer(string id, [FromBody] AnswerSubmission submission)
         {
             var question = await _questionRepo.GetByIdAsync(id);
             if (question == null) return NotFound();

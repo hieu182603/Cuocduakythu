@@ -21,6 +21,7 @@ function renderPlayerSetupCards(count) {
         storedNames = JSON.parse(localStorage.getItem("last_player_names") || "[]");
     } catch(e) {}
 
+    storedNames = storedNames.map(name => escapeHTML(name));
     for (let i = 0; i < count; i++) {
         let defaultName = storedNames[i] || `Người chơi ${i + 1}`;
         // Phân bổ mặc định theo vòng; người chơi vẫn có thể chọn trùng nhân vật.
@@ -126,12 +127,12 @@ function openQuestionsPool() {
         
         let answersHtml = q.answers.map((ans, aIdx) => `
             <div class="qpool-answer ${aIdx === q.correct ? 'correct-answer' : ''}">
-                ${String.fromCharCode(65 + aIdx)}. ${ans}
+                ${String.fromCharCode(65 + aIdx)}. ${escapeHTML(ans)}
             </div>
         `).join("");
 
         item.innerHTML = `
-            <div class="qpool-question">${idx + 1}. ${q.question}</div>
+            <div class="qpool-question">${idx + 1}. ${escapeHTML(q.question)}</div>
             <div class="qpool-answers">
                 ${answersHtml}
             </div>
@@ -150,7 +151,8 @@ function resetGameStates() {
 }
 
 // GAMEPLAY LOGIC
-function startGame() {
+async function startGame() {
+    await ensureOfflineQuestionsLoaded();
     if (questions.length === 0) {
         showNotification("Chưa tải được câu hỏi từ database. Không thể bắt đầu cuộc đua.", "error");
         return;

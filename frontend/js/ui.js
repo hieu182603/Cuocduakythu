@@ -9,16 +9,20 @@ async function loadScreens() {
         { id: "victory-screen", key: "victory", file: "screens/victory.html?v=2" }
     ];
 
-    for (const s of screensToLoad) {
-        const response = await fetch(s.file, { cache: "no-store" });
+    const loadedScreens = await Promise.all(screensToLoad.map(async s => {
+        const response = await fetch(s.file);
         if (!response.ok) throw new Error(`Failed to load screen template: ${s.file}`);
         const html = await response.text();
+        return { ...s, html };
+    }));
+
+    for (const s of loadedScreens) {
         // Find settings-modal and insert screens before it to maintain container structure
         const settingsModal = document.getElementById("settings-modal");
         if (settingsModal) {
-            settingsModal.insertAdjacentHTML("beforebegin", html);
+            settingsModal.insertAdjacentHTML("beforebegin", s.html);
         } else {
-            container.insertAdjacentHTML("beforeend", html);
+            container.insertAdjacentHTML("beforeend", s.html);
         }
         screens[s.key] = document.getElementById(s.id);
     }
@@ -31,7 +35,6 @@ function loadSettings() {
     if (localStorage.getItem("settings_speed")) speedSetting = localStorage.getItem("settings_speed");
     if (localStorage.getItem("settings_vfx")) vfxEnabled = localStorage.getItem("settings_vfx") === "true";
 }
-
 function saveSettings() {
     localStorage.setItem("settings_music", musicVol);
     localStorage.setItem("settings_sfx", sfxVol);

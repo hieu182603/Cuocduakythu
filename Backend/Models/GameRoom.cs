@@ -18,6 +18,8 @@ namespace Backend.Models
         public bool IsFinished { get; set; } = false;
         public int GameDurationMinutes { get; set; } = 10;
         public System.DateTime? GameStartTime { get; set; }
+        public System.DateTime? GameEndTimeUtc { get; set; }
+        public System.DateTime? RestoredAtUtc { get; set; }
 
         /// <summary>Cached questions loaded from Supabase at game start.</summary>
         public List<McqQuestion> CachedQuestions { get; set; } = new();
@@ -33,6 +35,9 @@ namespace Backend.Models
 
         [System.Text.Json.Serialization.JsonIgnore]
         public System.Threading.Timer? GameTimer { get; set; }
+
+        [System.Text.Json.Serialization.JsonIgnore]
+        public CancellationTokenSource? GameTimerCancellation { get; set; }
 
         public List<Player> GetPlayersSnapshot()
         {

@@ -22,9 +22,32 @@ namespace Backend.Models
         [System.Text.Json.Serialization.JsonIgnore]
         public bool CanProcessNewTileLanding { get; set; } = false;
         public DateTime? FrozenUntilUtc { get; set; }
-        public McqQuestion? CurrentQuestion { get; set; }
+        public string? CurrentQuestionId { get; set; }
         public string? PendingTileEventType { get; set; }
         public int PendingTileIndex { get; set; }
+        public PlayerPhase Phase { get; set; } = PlayerPhase.Ready;
+        public DateTime NextRollAllowedUtc { get; set; } = DateTime.MinValue;
+
+        public void ResetForRematch()
+        {
+            TileIndex = 0;
+            WrongStreak = 0;
+            Shield = false;
+            FreezeTimeMs = 0;
+            DoubleDice = false;
+            DiceModifier = 0;
+            IsAutoRoll = false;
+            LapCount = 0;
+            IsSpectator = false;
+            IsRolling = false;
+            CanProcessNewTileLanding = false;
+            FrozenUntilUtc = null;
+            CurrentQuestionId = null;
+            PendingTileEventType = null;
+            PendingTileIndex = 0;
+            Phase = PlayerPhase.Ready;
+            NextRollAllowedUtc = DateTime.MinValue;
+        }
 
         public int GetRemainingFreezeTimeMs()
         {

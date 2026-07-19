@@ -13,19 +13,26 @@ function showNotification(message, type = "info", duration = 3000) {
     const toast = document.createElement("div");
     toast.className = `toast ${type}`;
 
-    let iconHtml = '<i class="fa-solid fa-info-circle toast-icon" style="color: #3b82f6;"></i>';
+    let iconClass = "fa-info-circle";
+    let iconColor = "#3b82f6";
     if (type === "success") {
-        iconHtml = '<i class="fa-solid fa-circle-check toast-icon" style="color: #10b981;"></i>';
+        iconClass = "fa-circle-check";
+        iconColor = "#10b981";
     } else if (type === "error") {
-        iconHtml = '<i class="fa-solid fa-circle-exclamation toast-icon" style="color: #ef4444;"></i>';
+        iconClass = "fa-circle-exclamation";
+        iconColor = "#ef4444";
     } else if (type === "warning") {
-        iconHtml = '<i class="fa-solid fa-triangle-exclamation toast-icon" style="color: #f59e0b;"></i>';
+        iconClass = "fa-triangle-exclamation";
+        iconColor = "#f59e0b";
     }
 
-    toast.innerHTML = `
-        ${iconHtml}
-        <span class="toast-message">${message}</span>
-    `;
+    const icon = document.createElement("i");
+    icon.className = `fa-solid ${iconClass} toast-icon`;
+    icon.style.color = iconColor;
+    const messageNode = document.createElement("span");
+    messageNode.className = "toast-message";
+    messageNode.textContent = String(message ?? "");
+    toast.append(icon, messageNode);
 
     container.appendChild(toast);
 

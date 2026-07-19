@@ -22,8 +22,6 @@ WORKDIR /app
 COPY --from=build /app/publish .
 
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENV PORT=5089
-
 EXPOSE 5089
 
 ENTRYPOINT ["dotnet", "Backend.dll"]
