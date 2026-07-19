@@ -21,7 +21,7 @@ const APP_CONFIG = (() => {
     // 🔴 THAY ĐỔI URL NÀY THÀNH DOMAIN/IP CỦA VPS CỦA BẠN
     // Ví dụ: "https://api.cuocduakythu.com" hoặc "http://123.45.67.89:5089"
     // ====================================================================
-    const VPS_BACKEND_URL = "https://cuocduakythu-chi-backend-hieu182603.onrender.com";
+    const VPS_BACKEND_URL = "https://game-api-8ph3.onrender.com";
 
     return {
         SIGNALR_URL: `${VPS_BACKEND_URL}/gameHub`,
